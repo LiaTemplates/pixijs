@@ -1,0 +1,82 @@
+// A longer story in its own file, loaded with @[Pixi.load](examples/lost-key.txt)
+story lost-key "The Lost Key"
+stage 16:9 #1d2433
+option textspeed=50
+
+bg   home    base:room
+bg   street  base:village
+bg   park    base:forest
+bg   evening base:night
+
+char mia   "Mia"     base:girl    color=#e8556d voice="en-US Female"
+char opa   "Grandpa" base:grandpa color=#6f8b4c voice="en-GB Male" pitch=0.8
+char robo  "Robo"    base:robot   color=#4fa3d1 voice="en-US Male" pitch=0.6
+
+var clues = 0
+var helped = false
+
+# start
+title "The Lost Key" "a story in three scenes"
+bg home fade 1
+show opa thinking at right fade 0.6
+opa: Mia, have you seen my garden key? I cannot find it anywhere.
+show mia surprised at left from offleft
+mia: Your key? Let me help you, Grandpa!
+? Search the house first   -> house
+? Ask the neighbours       -> street
+
+# house
+mia thinking: Where would a key hide in this room?
+hotspot 0.65,0.40,0.24,0.30 -> desk   "Desk"
+hotspot 0.10,0.15,0.25,0.38 -> window "Window"
+? Go outside -> street
+
+# desk
+sound base:knock
+mia: Just pencils and old letters … but here is a note: "the robot knows".
+set clues += 1
+-> street
+
+# window
+mia: Through the window I can see Robo in the park!
+set clues += 1
+-> street
+
+# street
+bg street fade 1
+hide opa
+show mia at center
+move mia to left 1s
+mia: Outside! Clues so far: {clues}.
+show robo happy at right from offright
+robo: Beep! Hello Mia. I found something shiny in the park.
+? Follow Robo into the park       -> park  [helped = true]
+? Say no and go home              -> giveup
+
+# park
+bg park fade 1
+show robo at right
+mia happy: Show me!
+robo: It was right here, under the big tree …
+shake small
+sound base:magic
+flash #ffffcc 0.5s
+robo laugh: Found it!
+if clues >= 1: mia: Just like the note said!
+-> finale
+
+# finale
+bg evening fade 1.5
+tint evening 1
+hide robo
+show opa happy at right fade 0.5
+show mia happy at left
+opa laugh: My key! Thank you, Mia{helped ? " and Robo" : ""}!
+sound base:success
+end found "Grandpa can open his garden again."
+
+# giveup
+bg home fade 1
+show opa sad at right
+opa: Never mind, Mia. Maybe tomorrow.
+end lost "The key stays lost … for now."

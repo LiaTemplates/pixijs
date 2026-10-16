@@ -1,0 +1,47 @@
+{
+  "name": "lia-pixijs",
+  "version": "0.1.0",
+  "description": "LiaScript template: interactive, branching picture stories (scenes, characters, dialog, choices, sound, speech) rendered with PixiJS",
+  "app": "dist/index.js",
+  "targets": {
+    "app": {
+      "source": "src/index.ts",
+      "context": "browser",
+      "outputFormat": "global",
+      "includeNodeModules": true,
+      "sourceMap": false
+    }
+  },
+  "@parcel/resolver-default": {
+    "packageExports": true
+  },
+  "browserslist": [
+    "last 2 years",
+    "not dead"
+  ],
+  "scripts": {
+    "build": "parcel build --target app --no-cache",
+    "watch": "parcel watch --target app",
+    "test": "vitest run",
+    "typecheck": "tsc -p .",
+    "serve": "npx @liascript/devserver --input README.md --port 3000 --live"
+  },
+  "keywords": [
+    "LiaScript",
+    "PixiJS",
+    "interactive story",
+    "visual novel",
+    "OER"
+  ],
+  "author": "André Dietrich <LiaScript@web.de>",
+  "repository": "https://github.com/LiaTemplates/pixijs",
+  "license": "MIT",
+  "dependencies": {
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "parcel": "^2.16.4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
