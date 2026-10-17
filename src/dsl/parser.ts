@@ -2,6 +2,7 @@ import { tokenize, brackets, rect } from './args'
 import { commands } from '../runtime/registry'
 import '../runtime/commands'
 import { check, assignment } from '../runtime/expr'
+import { idleMode } from '../fx/life'
 import type { Node, ParseError, Script, Def, Option } from '../runtime/types'
 
 const LABEL = /^#+\s*([\p{L}\p{N}_.-]+)\s*$/u
@@ -300,6 +301,8 @@ export function parse(source: string): ParseResult {
       case 'char': {
         const def = definition(line, rest, true)
         if (!def.id) throw new Error('char needs a name: char anna "Anna" base:girl')
+        if (idleMode(def.kv.idle) === null)
+          throw new Error(`char ${def.id}: idle="${def.kv.idle}" is not an idle motion – use breathe, fidget or none`)
         script.characters[def.id] = def
         break
       }

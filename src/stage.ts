@@ -8,6 +8,7 @@ import * as PIXI from 'pixi.js'
 import 'pixi.js/browser'
 import { Application, Assets, BlurFilter, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { Tweens } from './fx/tween'
+import { calm } from './fx/life'
 import { Audio } from './audio'
 import { Speech, parseVoice, available as ttsAvailable } from './tts'
 import { createActor, loadTexture, type Actor } from './actors'
@@ -26,8 +27,6 @@ export type Settings = {
 }
 
 const yes = (v: string | undefined, def: boolean) => (v === undefined ? def : !/^(off|no|false|0)$/i.test(v))
-
-const calm = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** the default for reading aloud follows the sound switch of LiaScript */
 function liaSound(): boolean {
@@ -344,6 +343,7 @@ export class Stage implements Presenter {
     a.view.position.set(state.x * this.W, this.yOf(id, state))
     a.view.scale.set(flip ? -s : s, s)
     a.setExpression(state.expr)
+    a.setIdle?.(state.idle)
   }
 
   async show(id: string, o: { state: ActorState; fade?: number; from?: number; dur?: number }) {
@@ -351,6 +351,7 @@ export class Stage implements Presenter {
     if (!a || this.destroyed) return
     const state = o.state
     a.setExpression(state.expr)
+    a.setIdle?.(state.idle)
     if (!a.view.visible || a.view.alpha === 0) {
       this.place(id, a, state)
       if (o.from !== undefined) a.view.x = o.from * this.W
@@ -376,6 +377,7 @@ export class Stage implements Presenter {
     const def = this.script.characters[id] || this.script.images[id]
     const flip = state.flip ?? yes(def?.kv.flip, false)
     a.setExpression(state.expr)
+    a.setIdle?.(state.idle)
     if (!a.view.visible) {
       this.place(id, a, state)
       return

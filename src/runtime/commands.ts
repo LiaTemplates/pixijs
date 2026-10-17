@@ -5,6 +5,7 @@
 import { defineCommand, commands } from './registry'
 import { tokenize, duration, position } from '../dsl/args'
 import { check, assignment } from './expr'
+import { idleMode } from '../fx/life'
 import type { ActorState, Ctx, MenuItem, Option, ParseInfo } from './types'
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
@@ -26,6 +27,12 @@ function pos(word: string | undefined, name: string): number {
   if (p === null)
     throw new Error(`${name}: "${word ?? ''}" is not a position – use left, center, right, far-left, far-right, 30% or 0.3`)
   return p
+}
+
+function idle(word: string, cmd: string) {
+  const mode = idleMode(word)
+  if (!mode) throw new Error(`${cmd} idle: "${word}" is not an idle motion – use breathe, fidget or none`)
+  return mode
 }
 
 function actor(id: string | undefined, info: ParseInfo, cmd: string) {
@@ -83,6 +90,7 @@ function stageArgs(words: string[], kv: Record<string, string>, cmd: string) {
   if (kv.fade !== undefined) o.fade = dur(kv.fade, `${cmd} fade`)
   if (kv.ease !== undefined) o.ease = kv.ease
   if (kv.flip !== undefined) o.flip = !/^(false|no|off|0)$/i.test(kv.flip)
+  if (kv.idle !== undefined) o.idle = idle(kv.idle, cmd)
   return o
 }
 
@@ -258,6 +266,7 @@ defineCommand('show', {
     if (a.y !== undefined) state.y = a.y
     if (a.flip !== undefined) state.flip = a.flip
     if (a.scale !== undefined) state.scale = a.scale
+    if (a.idle !== undefined) state.idle = a.idle
     ctx.visual.actors[a.id] = state
     await ctx.view.show(a.id, {
       state,
@@ -290,7 +299,7 @@ defineCommand('move', {
     const { pos: words, kv } = tokenize(rest)
     const id = actor(words.shift(), info, 'move')
     const o = stageArgs(words, kv, 'move')
-    if (o.x === undefined && o.y === undefined && o.scale === undefined && o.flip === undefined)
+    if (o.x === undefined && o.y === undefined && o.scale === undefined && o.flip === undefined && o.idle === undefined)
       throw new Error('move needs a target: move anna to right 1s')
     return { id, ...o, words: undefined }
   },
@@ -301,6 +310,7 @@ defineCommand('move', {
     if (a.y !== undefined) state.y = a.y
     if (a.scale !== undefined) state.scale = a.scale
     if (a.flip !== undefined) state.flip = a.flip
+    if (a.idle !== undefined) state.idle = a.idle
     ctx.visual.actors[a.id] = state
     await ctx.view.move(a.id, { state, dur: a.dur ?? 1, ease: a.ease })
   },

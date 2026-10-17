@@ -49,6 +49,8 @@ export type ActorState = {
   y?: number
   flip?: boolean
   scale?: number
+  /** idle motion of image and spritesheet characters: breathe, fidget or none */
+  idle?: string
 }
 
 /** Everything that is visible or audible – stored with every checkpoint to restore a scene. */

@@ -4,6 +4,9 @@ import { Story } from '../src/runtime/story'
 import { evaluate, interpolate, assign } from '../src/runtime/expr'
 import { defineCommand } from '../src/runtime/registry'
 import type { Presenter, MenuItem, Snapshot } from '../src/runtime/types'
+import { tokenize } from '../src/dsl/args'
+import { expressions } from '../src/actors'
+import { Blinker, Speaking, idleMode, idlePose, isFrameKey, pickFrame, sheetAnimation } from '../src/fx/life'
 
 /** a view that records everything and picks choices from a list */
 function mock(picks: (number | string)[] = [], inputs: string[] = []) {
@@ -292,5 +295,119 @@ describe('i18n', () => {
     translate('eo', { start: 'Komenci' })
     expect(labels('eo').start).toBe('Komenci')
     expect(labels('eo').restart).toBe('Start again')
+  })
+})
+
+describe('image characters that feel alive', () => {
+  const KHADIJA =
+    'char khadija "Khadija" img/k/neutral.png sad=img/k/sad.png sad.talk=img/k/sad-talk.png ' +
+    'talk=img/k/neutral-talk.png blink=img/k/blink.png sad.blink=img/k/sad-blink.png idle=breathe'
+
+  it('reads talk and blink keys with a dot', () => {
+    const { kv } = tokenize('x Sad.Talk=a.png sad.blink="b c.png" talk=t.png')
+    expect(kv).toEqual({ 'sad.talk': 'a.png', 'sad.blink': 'b c.png', talk: 't.png' })
+  })
+
+  it('does not treat talk, blink and idle as expressions', () => {
+    const { script, errors } = parse(KHADIJA)
+    expect(errors).toEqual([])
+    const def = script.characters.khadija
+    expect(def.src).toBe('img/k/neutral.png')
+    expect(def.kv['sad.talk']).toBe('img/k/sad-talk.png')
+    expect(expressions(def)).toEqual(['sad'])
+    expect(Object.keys(def.kv).filter(isFrameKey).sort()).toEqual(['blink', 'sad.blink', 'sad.talk', 'talk'])
+  })
+
+  it('picks the frame for expression, talking and blinking', () => {
+    const all = new Set(['', 'sad', 'happy', 'sad.talk', 'talk', 'blink', 'sad.blink'])
+    const has = (k: string) => all.has(k)
+    expect(pickFrame(has, undefined, {})).toEqual({ key: '', frame: '' })
+    expect(pickFrame(has, 'sad', {})).toEqual({ key: 'sad', frame: '' })
+    expect(pickFrame(has, 'unknown', {})).toEqual({ key: '', frame: '' })
+    // talking: <expr>.talk, else talk
+    expect(pickFrame(has, 'sad', { open: true })).toEqual({ key: 'sad.talk', frame: 'talk' })
+    expect(pickFrame(has, 'happy', { open: true })).toEqual({ key: 'talk', frame: 'talk' })
+    expect(pickFrame(has, undefined, { open: true })).toEqual({ key: 'talk', frame: 'talk' })
+    // blinking: <expr>.blink; blink only for the base image
+    expect(pickFrame(has, 'sad', { blink: true })).toEqual({ key: 'sad.blink', frame: 'blink' })
+    expect(pickFrame(has, undefined, { blink: true })).toEqual({ key: 'blink', frame: 'blink' })
+    expect(pickFrame(has, 'neutral', { blink: true })).toEqual({ key: 'blink', frame: 'blink' })
+    expect(pickFrame(has, 'happy', { blink: true })).toEqual({ key: 'happy', frame: '' })
+    // an open mouth wins over closed eyes
+    expect(pickFrame(has, 'sad', { open: true, blink: true })).toEqual({ key: 'sad.talk', frame: 'talk' })
+    // no talking image at all: the expression stays (the actor stretches it a little)
+    const plain = new Set(['', 'sad'])
+    expect(pickFrame((k) => plain.has(k), 'sad', { open: true })).toEqual({ key: 'sad', frame: '' })
+  })
+
+  it('blinks every few seconds, but not while speaking', () => {
+    const b = new Blinker(() => 0) // first blink after 2 s, then every 2.5 s
+    expect(b.tick(1990)).toBe(false)
+    expect(b.tick(20)).toBe(true)
+    expect(b.tick(100)).toBe(true)
+    expect(b.tick(40)).toBe(false)
+    expect(b.tick(2600, false)).toBe(false) // due, but speaking
+    expect(b.tick(16)).toBe(true) // blinks as soon as it may
+    expect(b.tick(16, false)).toBe(false) // speaking opens the eyes at once
+  })
+
+  it('stays speaking between two mouth flaps', () => {
+    const s = new Speaking()
+    expect(s.active).toBe(false)
+    s.set(true)
+    s.set(false)
+    s.tick(Speaking.HOLD - 50)
+    expect(s.active).toBe(true)
+    s.tick(100)
+    expect(s.active).toBe(false)
+  })
+
+  it('plays <name>_talk of a spritesheet while speaking', () => {
+    const anims = new Set(['idle', 'idle_talk', 'wave'])
+    const has = (n: string) => anims.has(n)
+    expect(sheetAnimation(has, 'idle', true)).toBe('idle_talk')
+    expect(sheetAnimation(has, 'idle', false)).toBe('idle')
+    expect(sheetAnimation(has, 'wave', true)).toBe('wave')
+  })
+
+  it('moves only a little when idle', () => {
+    expect(idleMode(undefined)).toBeUndefined()
+    expect(idleMode('Breathe')).toBe('breathe')
+    expect(idleMode('off')).toBe('none')
+    expect(idleMode('dance')).toBeNull()
+    expect(idlePose('none', 1234)).toEqual({ sx: 1, sy: 1, x: 0, rotation: 0 })
+    for (let t = 0; t < 20000; t += 37) {
+      const b = idlePose('breathe', t)
+      expect(Math.abs(b.sy - 1)).toBeLessThanOrEqual(0.005)
+      expect(b.x).toBe(0)
+      const f = idlePose('fidget', t)
+      expect(Math.abs(f.sy - 1)).toBeLessThanOrEqual(0.005)
+      expect(Math.abs(f.x)).toBeLessThanOrEqual(0.006)
+      expect(Math.abs(f.rotation)).toBeLessThanOrEqual(0.012)
+    }
+    expect(idlePose('fidget', 500).x).not.toBe(0)
+  })
+
+  it('changes the idle motion with show and checks it', () => {
+    const { script, errors } = parse(KHADIJA + '\n# start\nshow khadija sad idle=fidget\nmove khadija idle=none\n')
+    expect(errors).toEqual([])
+    const [show, move] = script.nodes.filter((n) => n.cmd === 'show' || n.cmd === 'move')
+    expect(show.args).toMatchObject({ id: 'khadija', expr: 'sad', idle: 'fidget' })
+    expect(move.args).toMatchObject({ id: 'khadija', idle: 'none' })
+
+    const bad = parse('char k "K" img/k.png idle=dance\n' + KHADIJA + '\n# start\nshow khadija idle=jump\n')
+    expect(bad.errors.map((e) => e.line)).toEqual([1, 4])
+    expect(bad.errors.every((e) => /idle/.test(e.message))).toBe(true)
+  })
+
+  it('keeps the idle motion in the scene state', async () => {
+    const { script } = parse(KHADIJA + '\n# start\nshow khadija idle=fidget\nshow khadija sad\nkhadija: Hm.\n')
+    const { view } = mock()
+    const states: any[] = []
+    view.show = async (_id, o) => void states.push({ ...o.state })
+    const story = new Story(script, view)
+    await story.start()
+    expect(states.map((s) => s.idle)).toEqual(['fidget', 'fidget'])
+    expect(states[1].expr).toBe('sad')
   })
 })

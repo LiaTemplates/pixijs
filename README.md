@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 email:    LiaScript@web.de
-version:  0.2.0
+version:  0.3.0
 language: en
 narrator: US English Female
 comment:  Interactive, branching picture stories for LiaScript, rendered with
@@ -302,7 +302,7 @@ your course with the `import:` statement in the header:
 
 or use a fixed version, so that later changes cannot break your course:
 
-`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.2.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.3.0/README.md`
 
 You can also copy the macros from the [Implementation](#implementation) section
 into your own header, or load only the bundle with
@@ -371,6 +371,7 @@ bg     dusk   #ff9966..#334   ← a color or a gradient
 char   mia  "Mia"  base:girl  color=#e8556d voice="en-US Female"
 char   bot  "Bot"  emoji=🤖   happy=😀 sad=😢
 char   anna "Anna" img/anna.png happy=img/anna-happy.png talk=img/anna-talk.png
+                               ← + happy.talk=… blink=… idle=breathe, see "Image characters that feel alive"
 char   cat  "Cat"  sheet=img/cat.json anim=idle
 
 image  key   img/key.png  scale=0.3   ← an object that can be shown like a character
@@ -563,6 +564,7 @@ hide all fade 1
 | `show mia sad`                           | change the expression only                  |
 | `move mia to right 2s ease=out`          | move (`ease=` linear, in, out, inout, back, bounce, elastic) |
 | `show mia flip`, `scale=1.2`, `y=0.9`    | mirror, size, height (1 = bottom)           |
+| `show anna unsure idle=fidget`           | change the idle motion of an image or spritesheet character (`breathe`, `fidget`, `none`) |
 | `hide mia fade 1` / `hide mia to offright` / `hide all` | leave the stage              |
 
 Positions: `offleft`, `far-left`, `left`, `center-left`, `center`,
@@ -868,6 +870,59 @@ per expression (`happy=img/anna-happy.png`) and a speaking image
 (`talk=img/anna-talk.png`), an emoji (`emoji=🦊 happy=😺`), or a spritesheet
 (`sheet=cat.json`, expressions are animation names).
 
+### Image characters that feel alive
+
+Image characters can speak and blink with every face and breathe while they
+wait. All of it is optional, a character with one image still works.
+
+```text
+char khadija "Khadija" img/k/neutral.png talk=img/k/neutral-talk.png blink=img/k/neutral-blink.png sad=img/k/sad.png sad.talk=img/k/sad-talk.png sad.blink=img/k/sad-blink.png unsure=img/k/unsure.png unsure.talk=img/k/unsure-talk.png idle=breathe
+
+# start
+show khadija at left fade 0.5
+khadija: Hello, I am Khadija.
+khadija sad: This is my sad face – and it talks with a sad mouth.
+show khadija unsure idle=fidget
+khadija: I am not so sure about it …
+show khadija idle=breathe
+```
+
+The `char` definition must stay on one line.
+
+| key             | meaning                                                                      |
+| --------------- | ---------------------------------------------------------------------------- |
+| `talk=`         | mouth open, used while speaking for every expression without its own `.talk` |
+| `<expr>.talk=`  | mouth open for this expression, e.g. `sad.talk=img/k/sad-talk.png`           |
+| `blink=`        | eyes closed, for the first image (and expressions without an image)          |
+| `<expr>.blink=` | eyes closed for this expression, e.g. `sad.blink=img/k/sad-blink.png`        |
+| `idle=`         | `breathe` (a slow, very small rise and fall), `fidget` (breathing plus small, irregular shifts of weight and a slight tilt – unsure, nervous) or `none` (default) |
+
+* While a line is spoken, the mouth switches between the image of the
+  expression and its talking image: `<expr>.talk`, else `talk`. Without any
+  talking image the figure is stretched a tiny bit instead.
+* The eyes close every 2.5 – 6 seconds for a moment, like the builtin
+  characters, but never while the character speaks. An expression that has its
+  own image only blinks with its own `<expr>.blink` – a neutral blink would
+  flash the wrong face.
+* `idle=` in the `char` line is the default, `show … idle=fidget` or
+  `move … idle=none` changes it for the scene. It also works for spritesheet
+  characters and `image` objects.
+* Spritesheets: if there is an animation `<name>_talk` (e.g. `idle_talk` next
+  to `idle`), it is played while the character speaks.
+* With "reduce motion" in the system settings, there is no idle motion.
+  Talking and blinking images still change.
+
+__Recommended images__
+
+* All images of a character have the __same canvas size__, e.g. 900 × 1200 px,
+  as transparent PNG (or WebP).
+* The figure stands __bottom-centered at the same baseline__ in every image:
+  images are anchored at the bottom center, so a shifted figure jumps when the
+  image changes. Leave a little room at the top and sides for the idle motion.
+* Per expression three frames: __rest__ (mouth closed, eyes open), __talk__
+  (mouth open) and __blink__ (eyes closed), which differ only in mouth and eyes.
+  Easiest: draw the rest frame, copy it and change only the mouth or the eyes.
+
 ## Builtin backgrounds
 
 ```text @Pixi.story
@@ -1025,8 +1080,9 @@ arrow keys go to LiaScript and change the slide.
   Give hotspots a tooltip text, it is their name for screen readers.
 * The stage only takes the focus when the reader is already in it, and gives it
   back to the stage when a focused button disappears. Esc leaves the stage.
-* With "reduce motion" in the system settings, `shake` and `flash` are skipped
-  and the bouncing and pulsing marks stand still.
+* With "reduce motion" in the system settings, `shake` and `flash` are skipped,
+  the bouncing and pulsing marks stand still and image characters do not
+  breathe or fidget (`idle=`).
 
 ## Extending
 
