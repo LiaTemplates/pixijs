@@ -1,6 +1,6 @@
 {
   "name": "lia-pixijs",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "LiaScript template: interactive, branching picture stories (scenes, characters, dialog, choices, sound, speech) rendered with PixiJS",
   "app": "dist/index.js",
   "targets": {

@@ -378,7 +378,7 @@ describe('image characters that feel alive', () => {
     expect(idlePose('none', 1234)).toEqual({ sx: 1, sy: 1, x: 0, rotation: 0 })
     for (let t = 0; t < 20000; t += 37) {
       const b = idlePose('breathe', t)
-      expect(Math.abs(b.sy - 1)).toBeLessThanOrEqual(0.005)
+      expect(Math.abs(b.sy - 1)).toBeLessThanOrEqual(0.0025)
       expect(b.x).toBe(0)
       const f = idlePose('fidget', t)
       expect(Math.abs(f.sy - 1)).toBeLessThanOrEqual(0.005)

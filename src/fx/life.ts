@@ -102,14 +102,14 @@ const wave = (t: number, period: number, phase = 0) => Math.sin((2 * Math.PI * t
 /**
  * A subtle idle motion at time `t` (ms). `x` is a fraction of the height of the
  * character (it is anchored bottom-center, so it scales and turns around the feet).
- * - breathe: scale.y ± 0.4 %, scale.x ± 0.15 %, period 3.6 s
+ * - breathe: scale.y ± 0.25 %, scale.x ± 0.08 %, period 4 s
  * - fidget: faster breathing plus irregular weight shifts – a small sway to the
  *   sides (± 0.6 % of the height) and a tiny tilt (± 0.7°)
  */
 export function idlePose(mode: Idle, t: number): Pose {
   if (mode === 'breathe') {
-    const b = wave(t, 3600)
-    return { sx: 1 + 0.0015 * b, sy: 1 + 0.004 * b, x: 0, rotation: 0 }
+    const b = wave(t, 4000)
+    return { sx: 1 + 0.0008 * b, sy: 1 + 0.0025 * b, x: 0, rotation: 0 }
   }
   if (mode === 'fidget') {
     const b = wave(t, 3000)
