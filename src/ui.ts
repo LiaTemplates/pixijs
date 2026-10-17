@@ -35,7 +35,8 @@ const CSS = `
 .lp-choices button .lp-key{opacity:.6;margin-inline-end:.6em;font-size:.8em}
 .lp-hotspot{position:absolute;pointer-events:auto;border:2px dashed transparent;border-radius:.5em;background:transparent;padding:0}
 .lp-hotspot:hover,.lp-hotspot:focus-visible{border-color:rgba(255,255,255,.8);background:rgba(255,255,255,.12);outline:none}
-.lp-hint .lp-hotspot{animation:lp-pulse 1.6s infinite}
+.lp-hint .lp-hotspot:not(.lp-actor){animation:lp-pulse 1.6s infinite}
+.lp-hotspot.lp-actor{pointer-events:none}
 @keyframes lp-pulse{50%{border-color:rgba(255,255,255,.7);background:rgba(255,255,255,.08)}}
 .lp-tip{position:absolute;left:50%;bottom:-0.2em;transform:translate(-50%,100%);white-space:nowrap;font-size:.75em;padding:.1em .5em;
   border-radius:.3em;background:rgba(0,0,0,.7);color:#fff;opacity:0;transition:opacity .15s;pointer-events:none}
@@ -69,6 +70,8 @@ const CSS = `
 .lp-errors b{color:#fff}
 .lp-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.7}
 .lp-hidden{display:none!important}
+.lp-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.lia-pixi *{animation:none!important;transition:none!important}}
 `
 
 export function injectStyle() {
@@ -99,6 +102,8 @@ const el = (tag: string, cls?: string, text?: string) => {
   return e
 }
 
+let uid = 0
+
 export type ToolbarState = { back: boolean; sound: boolean; voice: boolean; auto: boolean; voiceAvailable: boolean }
 
 export class Overlay {
@@ -111,6 +116,9 @@ export class Overlay {
   private hotspotsEl = el('div', 'lp-hotspots')
   private layer = el('div', 'lp-layer')
   private toolbarEl = el('div', 'lp-toolbar')
+  /** what screen readers hear: lines and scene changes, also a transcript to read again */
+  private logEl = el('div', 'lp-sr')
+  private keysEl = el('div', 'lp-sr')
   private typing: any = null
   private typingDone: (() => void) | null = null
   private full = ''
@@ -127,9 +135,12 @@ export class Overlay {
       fullscreen: () => void
     }
   ) {
-    this.dialogEl.setAttribute('aria-live', 'polite')
+    // the typewriter would be read letter by letter, the log gets the whole line instead
+    this.dialogEl.setAttribute('aria-hidden', 'true')
     this.dialogEl.append(this.nameEl, this.textEl, this.nextEl)
-    this.root.append(this.dialogEl, this.hotspotsEl, this.choicesEl, this.layer, this.toolbarEl)
+    this.logEl.setAttribute('role', 'log')
+    this.keysEl.id = `lp-keys-${++uid}`
+    this.root.append(this.logEl, this.keysEl, this.dialogEl, this.hotspotsEl, this.choicesEl, this.layer, this.toolbarEl)
     host.appendChild(this.root)
   }
 
@@ -137,6 +148,27 @@ export class Overlay {
   setLanguage(t: Labels, dir: 'ltr' | 'rtl') {
     this.t = t
     this.host.setAttribute('dir', dir)
+    this.keysEl.textContent = t.keys
+    this.host.setAttribute('aria-describedby', this.keysEl.id)
+  }
+
+  /** tells screen readers what happens (not behind the start and end screen) */
+  announce(text: string) {
+    if (!text.trim() || this.layer.querySelector('.lp-screen')) return
+    this.logEl.append(el('p', '', text))
+    while (this.logEl.childElementCount > 30) this.logEl.firstElementChild!.remove()
+  }
+
+  /** moves the focus only if the reader is already in the stage, never away from the page */
+  private focus(e: HTMLElement | null) {
+    if (e && this.host.contains(document.activeElement)) e.focus({ preventScroll: true })
+  }
+
+  /** a focused element that is removed hands the focus back to the stage, so the keys keep working */
+  private replace(box: HTMLElement, ...nodes: Node[]) {
+    const had = box.contains(document.activeElement)
+    box.replaceChildren(...nodes)
+    if (had) this.host.focus({ preventScroll: true })
   }
 
   // --- dialog ---------------------------------------------------------------
@@ -144,6 +176,7 @@ export class Overlay {
   /** shows a line, types it letter by letter; resolves when the text is complete */
   dialog(name: string | null, color: string | undefined, text: string, speed: number): Promise<void> {
     this.stopTyping()
+    this.announce(name ? `${name}: ${text}` : text)
     this.dialogEl.classList.remove('lp-hidden')
     this.dialogEl.classList.toggle('lp-narration', !name)
     this.nameEl.classList.toggle('lp-hidden', !name)
@@ -204,11 +237,16 @@ export class Overlay {
   // --- choices --------------------------------------------------------------
 
   choices(items: { text: string; pick: () => void }[]) {
-    this.choicesEl.replaceChildren()
+    this.replace(this.choicesEl)
     items.forEach((item, i) => {
       const b = el('button') as HTMLButtonElement
       b.type = 'button'
-      if (items.length > 1 && i < 9) b.append(el('span', 'lp-key', String(i + 1)))
+      if (items.length > 1 && i < 9) {
+        const key = el('span', 'lp-key', String(i + 1))
+        key.setAttribute('aria-hidden', 'true')
+        b.setAttribute('aria-keyshortcuts', String(i + 1))
+        b.append(key)
+      }
       b.append(document.createTextNode(item.text))
       b.onclick = (e) => {
         e.stopPropagation()
@@ -217,17 +255,22 @@ export class Overlay {
       this.choicesEl.appendChild(b)
     })
     this.choicesEl.classList.toggle('lp-hidden', !items.length)
-    ;(this.choicesEl.querySelector('button') as HTMLButtonElement | null)?.focus({ preventScroll: true })
+    this.focus(this.choicesEl.querySelector('button'))
   }
 
   /** hotspots on the stage; buttons that belong to the same menu move aside, so the scene stays visible */
-  hotspots(items: { rect: [number, number, number, number]; text: string; pick: () => void }[], hint: boolean, aside = items.length > 0) {
+  hotspots(
+    items: { rect: [number, number, number, number]; text: string; pick: () => void; actor?: boolean }[],
+    hint: boolean,
+    aside = items.length > 0
+  ) {
     this.choicesEl.classList.toggle('lp-aside', aside)
-    this.hotspotsEl.replaceChildren()
+    this.replace(this.hotspotsEl)
     this.hotspotsEl.classList.toggle('lp-hint', hint)
     for (const item of items) {
       const [x, y, w, h] = item.rect
-      const b = el('button', 'lp-hotspot') as HTMLButtonElement
+      // on actors the mouse goes through to PixiJS, the button is there for keys and screen readers
+      const b = el('button', item.actor ? 'lp-hotspot lp-actor' : 'lp-hotspot') as HTMLButtonElement
       b.type = 'button'
       Object.assign(b.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` })
       if (item.text) {
@@ -240,12 +283,13 @@ export class Overlay {
       }
       this.hotspotsEl.appendChild(b)
     }
+    if (!this.choicesEl.childElementCount) this.focus(this.hotspotsEl.querySelector('button'))
   }
 
   clearChoices() {
-    this.choicesEl.replaceChildren()
+    this.replace(this.choicesEl)
     this.choicesEl.classList.add('lp-hidden')
-    this.hotspotsEl.replaceChildren()
+    this.replace(this.hotspotsEl)
   }
 
   /** picks the n-th visible choice (keyboard 1–9) */
@@ -262,18 +306,19 @@ export class Overlay {
   // --- layers: title, input, screens ----------------------------------------
 
   clearLayer() {
-    this.layer.replaceChildren()
+    this.replace(this.layer)
   }
 
   title(text: string, sub: string, onClick: () => void) {
     const box = el('div', 'lp-title')
     box.append(el('h2', '', text))
     if (sub) box.append(el('p', '', sub))
+    this.announce(sub ? `${text}. ${sub}` : text)
     box.onclick = (e) => {
       e.stopPropagation()
       onClick()
     }
-    this.layer.replaceChildren(box)
+    this.replace(this.layer, box)
   }
 
   input(question: string, value: string): Promise<string> {
@@ -295,8 +340,8 @@ export class Overlay {
       box.onclick = (e) => e.stopPropagation()
       input.onkeydown = (e) => e.stopPropagation()
       box.append(form)
-      this.layer.replaceChildren(box)
-      setTimeout(() => input.focus(), 50)
+      this.replace(this.layer, box)
+      setTimeout(() => this.focus(input), 50)
     })
   }
 
@@ -316,12 +361,12 @@ export class Overlay {
     }
     box.append(row)
     box.onclick = (e) => e.stopPropagation()
-    this.layer.replaceChildren(box)
-    ;(row.querySelector('.lp-primary') as HTMLButtonElement | null)?.focus({ preventScroll: true })
+    this.replace(this.layer, box)
+    this.focus(row.querySelector('.lp-primary'))
   }
 
   loading(show: boolean) {
-    if (show) this.layer.replaceChildren(el('div', 'lp-loading', this.t.loading))
+    if (show) this.replace(this.layer, el('div', 'lp-loading', this.t.loading))
     else if (this.layer.querySelector('.lp-loading')) this.clearLayer()
   }
 
@@ -329,7 +374,7 @@ export class Overlay {
     const box = el('div', 'lp-errors')
     box.append(el('b', '', this.t.errors + '\n\n'))
     for (const e of list) box.append(document.createTextNode(`${lineText(this.t, e.line)}: ${e.message}\n`))
-    this.layer.replaceChildren(box)
+    this.replace(this.layer, box)
   }
 
   toast(message: string) {
@@ -345,7 +390,9 @@ export class Overlay {
   // --- toolbar --------------------------------------------------------------
 
   toolbar(state: ToolbarState | null) {
-    this.toolbarEl.replaceChildren()
+    // the toolbar is built again on every change: the focused button keeps the focus
+    const focused = Array.prototype.indexOf.call(this.toolbarEl.children, document.activeElement)
+    this.replace(this.toolbarEl)
     if (!state) return
     const button = (icon: string, label: string, action: () => void, pressed?: boolean, disabled = false) => {
       const b = el('button') as HTMLButtonElement
@@ -370,6 +417,7 @@ export class Overlay {
     if (state.voiceAvailable) button('voice', this.t.voice, a.voice, state.voice)
     button('auto', this.t.auto, a.auto, state.auto)
     button('fullscreen', this.t.fullscreen, a.fullscreen)
+    if (focused >= 0) (this.toolbarEl.children[focused] as HTMLElement | undefined)?.focus({ preventScroll: true })
   }
 
   destroy() {

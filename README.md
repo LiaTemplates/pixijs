@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 email:    LiaScript@web.de
-version:  0.1.0
+version:  0.2.0
 language: en
 narrator: US English Female
 comment:  Interactive, branching picture stories for LiaScript, rendered with
@@ -302,7 +302,7 @@ your course with the `import:` statement in the header:
 
 or use a fixed version, so that later changes cannot break your course:
 
-`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.1.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.2.0/README.md`
 
 You can also copy the macros from the [Implementation](#implementation) section
 into your own header, or load only the bundle with
@@ -364,7 +364,7 @@ lang   en-US                   ← language for reading aloud (default: the cour
 base   https://example.org/img/ ← where relative files are loaded from (optional)
 
 bg     forest base:forest      ← builtin background
-bg     beach  img/beach.jpg    ← an image (relative to the course)
+bg     beach  img/beach.jpg  alt="A sunny beach" ← an image, alt= is read by screen readers
 bg     intro  video/intro.mp4  ← a looping video
 bg     dusk   #ff9966..#334   ← a color or a gradient
 
@@ -397,6 +397,9 @@ option textspeed=45 auto=off tts=on dim=on hint=on
 
 Characters accept `scale=`, `y=` (1 = bottom of the stage), `flip=yes`,
 `height=` (fraction of the stage height) and `voice=`, `pitch=`, `rate=`.
+
+Backgrounds and images accept `alt="…"`, a short description for screen
+readers. Without it, their id is read (`forest`, `key`).
 
 ## Dialog
 
@@ -1007,6 +1010,23 @@ The buttons at the top right of the stage:
 | ⛶      | fullscreen                                       | f                     |
 |        | continue                                         | click, space, enter, → |
 |        | pick a choice                                    | 1 – 9                 |
+|        | leave the stage (the keys belong to the course)  | Esc, Tab              |
+
+On the start and end screen, and when there is nothing to go back to, the
+arrow keys go to LiaScript and change the slide.
+
+### Accessibility
+
+* Screen readers hear every line once it is shown (not letter by letter), and
+  what changes in the scene: the background (its `alt=`), who appears and who
+  disappears, titles and the end. The stage also says which keys it uses.
+* Choices and hotspots are buttons and can be reached with Tab. A hotspot on a
+  character or image gets a button too, so it can be used without a mouse.
+  Give hotspots a tooltip text, it is their name for screen readers.
+* The stage only takes the focus when the reader is already in it, and gives it
+  back to the stage when a focused button disappears. Esc leaves the stage.
+* With "reduce motion" in the system settings, `shake` and `flash` are skipped
+  and the bouncing and pulsing marks stand still.
 
 ## Extending
 

@@ -214,6 +214,7 @@ export class LiaPixiStory extends HTMLElement {
       const found = this.endingNames.filter((n) => story.endings.has(n)).length
       info += (info ? '\n' : '') + `${stage.t.endings}: ${found} / ${this.endingNames.length}`
     }
+    stage.ui.announce(info ? `${title}. ${info}` : title)
     const buttons = [{ label: '↺ ' + stage.t.restart, primary: true, action: () => this.restart() }]
     const arrow = stage.dir === 'rtl' ? '↷ ' : '↶ '
     if (story.canGoBack()) buttons.push({ label: arrow + stage.t.back, primary: false, action: () => this.back() })
@@ -233,11 +234,12 @@ export class LiaPixiStory extends HTMLElement {
   }
 
   back() {
-    if (!this.story?.canGoBack()) return
+    if (!this.story?.canGoBack()) return false
     this.screen = null
     this.stage?.ui.clearLayer()
     this.story.back().then(() => this.toolbar())
     this.toolbar()
+    return true
   }
 
   restart() {
@@ -301,7 +303,8 @@ export class LiaPixiStory extends HTMLElement {
         case 'Enter':
         case 'ArrowRight':
         case 'ArrowDown':
-          if (interactive(e.target) && (key === ' ' || key === 'Enter')) {
+          // on the start and end screen the keys still belong to the course (next slide …)
+          if (this.screen || (interactive(e.target) && (key === ' ' || key === 'Enter'))) {
             handled = false
             break
           }
@@ -311,14 +314,16 @@ export class LiaPixiStory extends HTMLElement {
         case 'ArrowLeft':
         case 'ArrowUp':
         case 'Backspace':
-          this.back()
+          // nothing to go back to: LiaScript gets the key and can go to the previous slide
+          handled = this.back()
           break
         case 'f':
           this.fullscreen()
           break
         case 'Escape':
-          handled = !!this.wrapper?.classList.contains('lp-fake-fullscreen')
-          this.wrapper?.classList.remove('lp-fake-fullscreen')
+          // leaves the fake fullscreen, or else the stage, so the keys belong to the course again
+          if (this.wrapper?.classList.contains('lp-fake-fullscreen')) this.wrapper.classList.remove('lp-fake-fullscreen')
+          else (document.activeElement as HTMLElement | null)?.blur()
           break
         default:
           if (/^[1-9]$/.test(e.key)) handled = stage.ui.pickChoice(Number(e.key) - 1)

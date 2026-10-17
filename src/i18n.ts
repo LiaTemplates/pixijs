@@ -28,6 +28,11 @@ export type Labels = {
   errors: string
   /** `{n}` is replaced by the line number */
   line: string
+  /** for screen readers, `{name}` is the character or object */
+  appears: string
+  disappears: string
+  /** for screen readers: how the stage is used with keys */
+  keys: string
 }
 
 const L = (
@@ -45,7 +50,7 @@ const L = (
   loading: string,
   errors: string,
   line: string
-): Labels => ({ start, continue: continue_, restart, back, sound, voice, auto, fullscreen, end, endings, ok, loading, errors, line })
+): Partial<Labels> => ({ start, continue: continue_, restart, back, sound, voice, auto, fullscreen, end, endings, ok, loading, errors, line })
 
 // prettier-ignore
 export const translations: Record<string, Partial<Labels>> = {
@@ -84,6 +89,47 @@ export const translations: Record<string, Partial<Labels>> = {
   id: L('Mulai', 'Lanjut', 'Mulai lagi', 'Kembali', 'Suara', 'Bacakan', 'Putar otomatis', 'Layar penuh', 'Tamat', 'Akhir yang ditemukan', 'OK', 'memuat …', 'Cerita ini berisi kesalahan:', 'baris {n}'),
   vi: L('Bắt đầu', 'Tiếp tục', 'Bắt đầu lại', 'Quay lại', 'Âm thanh', 'Đọc to', 'Tự động phát', 'Toàn màn hình', 'Hết', 'Các kết thúc đã tìm thấy', 'OK', 'đang tải …', 'Câu chuyện này có lỗi:', 'dòng {n}'),
 }
+
+// texts for screen readers: appears, disappears, keys
+// (nouns where a verb would need the gender of the character)
+// prettier-ignore
+const spoken: Record<string, [string, string, string]> = {
+  en: ['{name} appears', '{name} disappears', 'Space: continue, arrow keys: forward and back, 1–9: choose, Escape: leave the story'],
+  de: ['{name} erscheint', '{name} verschwindet', 'Leertaste: weiter, Pfeiltasten: vor und zurück, 1–9: auswählen, Escape: Geschichte verlassen'],
+  ar: ['دخول: {name}', 'خروج: {name}', 'المسافة: متابعة، الأسهم: للأمام وللخلف، 1–9: اختيار، Escape: مغادرة القصة'],
+  fa: ['{name} ظاهر می‌شود', '{name} ناپدید می‌شود', 'فاصله: ادامه، کلیدهای جهت: جلو و عقب، 1–9: انتخاب، Escape: خروج از داستان'],
+  he: ['כניסה: {name}', 'יציאה: {name}', 'רווח: המשך, חיצים: קדימה ואחורה, 1–9: בחירה, Escape: יציאה מהסיפור'],
+  ur: ['داخلہ: {name}', 'رخصت: {name}', 'اسپیس: جاری رکھیں، تیر والی کلیدیں: آگے اور پیچھے، 1–9: انتخاب، Escape: کہانی سے باہر نکلیں'],
+  fr: ['{name} apparaît', '{name} disparaît', 'Espace : continuer, flèches : avancer et reculer, 1–9 : choisir, Échap : quitter l’histoire'],
+  es: ['{name} aparece', '{name} desaparece', 'Espacio: continuar, flechas: avanzar y retroceder, 1–9: elegir, Escape: salir de la historia'],
+  it: ['{name} appare', '{name} scompare', 'Spazio: continua, frecce: avanti e indietro, 1–9: scegli, Esc: esci dalla storia'],
+  pt: ['{name} aparece', '{name} desaparece', 'Espaço: continuar, setas: avançar e recuar, 1–9: escolher, Esc: sair da história'],
+  'pt-br': ['{name} aparece', '{name} desaparece', 'Espaço: continuar, setas: avançar e voltar, 1–9: escolher, Esc: sair da história'],
+  nl: ['{name} verschijnt', '{name} verdwijnt', 'Spatie: verder, pijltjestoetsen: vooruit en terug, 1–9: kiezen, Escape: verhaal verlaten'],
+  pl: ['{name} pojawia się', '{name} znika', 'Spacja: dalej, strzałki: naprzód i wstecz, 1–9: wybór, Escape: opuść historię'],
+  cs: ['{name} se objevuje', '{name} mizí', 'Mezerník: pokračovat, šipky: vpřed a zpět, 1–9: vybrat, Escape: opustit příběh'],
+  sk: ['{name} sa objavuje', '{name} mizne', 'Medzerník: pokračovať, šípky: dopredu a späť, 1–9: vybrať, Escape: opustiť príbeh'],
+  hr: ['{name} se pojavljuje', '{name} nestaje', 'Razmaknica: nastavi, strelice: naprijed i natrag, 1–9: odaberi, Escape: napusti priču'],
+  hu: ['{name} megjelenik', '{name} eltűnik', 'Szóköz: tovább, nyilak: előre és vissza, 1–9: választás, Escape: kilépés a történetből'],
+  ro: ['{name} apare', '{name} dispare', 'Spațiu: continuă, săgeți: înainte și înapoi, 1–9: alege, Escape: ieși din poveste'],
+  bg: ['{name} се появява', '{name} изчезва', 'Интервал: напред, стрелки: напред и назад, 1–9: избор, Escape: изход от историята'],
+  uk: ['{name} з’являється', '{name} зникає', 'Пробіл: далі, стрілки: вперед і назад, 1–9: вибір, Escape: вийти з історії'],
+  ru: ['{name} появляется', '{name} исчезает', 'Пробел: дальше, стрелки: вперёд и назад, 1–9: выбор, Escape: выйти из истории'],
+  el: ['{name} εμφανίζεται', '{name} εξαφανίζεται', 'Διάστημα: συνέχεια, βέλη: εμπρός και πίσω, 1–9: επιλογή, Escape: έξοδος από την ιστορία'],
+  tr: ['{name} görünüyor', '{name} kayboluyor', 'Boşluk: devam, ok tuşları: ileri ve geri, 1–9: seç, Escape: hikâyeden çık'],
+  sv: ['{name} dyker upp', '{name} försvinner', 'Mellanslag: fortsätt, piltangenter: framåt och bakåt, 1–9: välj, Escape: lämna berättelsen'],
+  da: ['{name} dukker op', '{name} forsvinder', 'Mellemrum: fortsæt, piletaster: frem og tilbage, 1–9: vælg, Escape: forlad historien'],
+  nb: ['{name} dukker opp', '{name} forsvinner', 'Mellomrom: fortsett, piltaster: fram og tilbake, 1–9: velg, Escape: forlat historien'],
+  fi: ['{name} ilmestyy', '{name} katoaa', 'Välilyönti: jatka, nuolinäppäimet: eteen ja taakse, 1–9: valitse, Esc: poistu tarinasta'],
+  zh: ['{name} 出现', '{name} 消失', '空格：继续，方向键：前进和后退，1–9：选择，Esc：离开故事'],
+  'zh-tw': ['{name} 出現', '{name} 消失', '空白鍵：繼續，方向鍵：前進和後退，1–9：選擇，Esc：離開故事'],
+  ja: ['{name} が登場', '{name} が退場', 'スペース：次へ、矢印キー：進む・戻る、1～9：選ぶ、Esc：物語から出る'],
+  ko: ['{name} 등장', '{name} 퇴장', '스페이스: 계속, 화살표 키: 앞으로/뒤로, 1–9: 선택, Esc: 이야기 나가기'],
+  hi: ['प्रवेश: {name}', 'प्रस्थान: {name}', 'स्पेस: आगे, तीर कुंजियाँ: आगे और पीछे, 1–9: चुनें, Escape: कहानी से बाहर निकलें'],
+  id: ['{name} muncul', '{name} menghilang', 'Spasi: lanjut, tombol panah: maju dan mundur, 1–9: pilih, Escape: keluar dari cerita'],
+  vi: ['{name} xuất hiện', '{name} biến mất', 'Phím cách: tiếp tục, phím mũi tên: tới và lui, 1–9: chọn, Escape: rời câu chuyện'],
+}
+for (const [k, [appears, disappears, keys]] of Object.entries(spoken)) Object.assign(translations[k], { appears, disappears, keys })
 
 // the same language under another code
 translations.no = translations.nb

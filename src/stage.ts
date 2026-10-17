@@ -27,6 +27,8 @@ export type Settings = {
 
 const yes = (v: string | undefined, def: boolean) => (v === undefined ? def : !/^(off|no|false|0)$/i.test(v))
 
+const calm = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
 /** the default for reading aloud follows the sound switch of LiaScript */
 function liaSound(): boolean {
   try {
@@ -196,6 +198,15 @@ export class Stage implements Presenter {
     return true
   }
 
+  private nameOf(id: string) {
+    return this.script.characters[id]?.name ?? this.script.images[id]?.kv.alt ?? id
+  }
+
+  /** tells screen readers that a character or object appears or disappears */
+  private tell(what: 'appears' | 'disappears', id: string) {
+    this.ui.announce(this.t[what].replace('{name}', this.nameOf(id)))
+  }
+
   extras() {
     return {
       app: this.app,
@@ -267,6 +278,8 @@ export class Stage implements Presenter {
       return
     }
     this.bg = next
+    const def = ref ? this.script.backgrounds[ref] : undefined
+    if (def) this.ui.announce(def.kv.alt ?? def.id)
     if (o.fade) this.ui.hideDialog()
     if (next) {
       next.alpha = o.fade ? 0 : 1
@@ -344,6 +357,7 @@ export class Stage implements Presenter {
       a.view.visible = true
       a.view.tint = 0xffffff
       this.layers.actors.addChild(a.view) // on top
+      this.tell('appears', id)
       a.view.alpha = o.fade ? 0 : 1
       await Promise.all([
         this.tweens.to(a.view, { alpha: 1 }, o.fade || 0),
@@ -383,6 +397,7 @@ export class Stage implements Presenter {
   async hide(id: string, o: { fade?: number; to?: number; dur?: number }) {
     const a = this.actors.get(id) || (this.pending.has(id) ? await this.pending.get(id) : null)
     if (!a || !a.view.visible) return
+    this.tell('disappears', id)
     await Promise.all([
       this.tweens.to(a.view, { alpha: 0 }, o.fade || (o.to !== undefined ? o.dur ?? 0.8 : 0)),
       o.to !== undefined ? this.tweens.to(a.view, { x: o.to * this.W }, o.dur ?? 0.8, 'in') : null,
@@ -490,23 +505,25 @@ export class Stage implements Presenter {
 
       const buttons = items.filter((i) => !i.hotspot)
       this.ui.choices(buttons.map((i) => ({ text: i.text, pick: () => pick(i.index) })))
-      this.ui.hotspots(
-        items
-          .filter((i) => i.hotspot?.rect)
-          .map((i) => {
-            const [x, y, w, h] = i.hotspot!.rect!
-            // pixels or fractions
-            const r: [number, number, number, number] =
-              Math.max(x, y, w, h) > 1.5 ? [x / this.W, y / this.H, w / this.W, h / this.H] : [x, y, w, h]
-            return { rect: r, text: i.text, pick: () => pick(i.index) }
-          }),
-        this.settings.hint,
-        items.some((i) => i.hotspot)
-      )
+      const spots: Parameters<Overlay['hotspots']>[0] = items
+        .filter((i) => i.hotspot?.rect)
+        .map((i) => {
+          const [x, y, w, h] = i.hotspot!.rect!
+          // pixels or fractions
+          const r: [number, number, number, number] =
+            Math.max(x, y, w, h) > 1.5 ? [x / this.W, y / this.H, w / this.W, h / this.H] : [x, y, w, h]
+          return { rect: r, text: i.text, pick: () => pick(i.index) }
+        })
       for (const i of items.filter((i) => i.hotspot?.actor)) {
-        const a = this.actors.get(i.hotspot!.actor!)
+        const id = i.hotspot!.actor!
+        const a = this.actors.get(id)
         if (!a) continue
         const v = a.view
+        if (v.visible) {
+          const b = v.getBounds()
+          const rect: [number, number, number, number] = [b.x / this.W, b.y / this.H, b.width / this.W, b.height / this.H]
+          spots.push({ rect, text: i.text || this.nameOf(id), pick: () => pick(i.index), actor: true })
+        }
         const sx = v.scale.x
         const sy = v.scale.y
         v.eventMode = 'static'
@@ -526,6 +543,7 @@ export class Stage implements Presenter {
           if (!v.destroyed) v.scale.set(sx, sy)
         })
       }
+      this.ui.hotspots(spots, this.settings.hint, items.some((i) => i.hotspot))
     })
   }
 
@@ -559,6 +577,8 @@ export class Stage implements Presenter {
 
   async effect(name: string, a: Record<string, any>) {
     const { world, tweens } = this
+    // shaking and flashing can make people sick or cause seizures
+    if ((name === 'shake' || name === 'flash') && calm()) return
     switch (name) {
       case 'shake': {
         const base = { x: world.position.x, y: world.position.y }
@@ -656,6 +676,7 @@ export class Stage implements Presenter {
     await Promise.all(Object.keys(v.actors).map((id) => this.actor(id)))
     for (const [id, a] of this.actors) {
       const state = v.actors[id]
+      if (!state !== !a.view.visible) this.tell(state ? 'appears' : 'disappears', id)
       if (!state) {
         a.view.visible = false
         a.view.alpha = 0
