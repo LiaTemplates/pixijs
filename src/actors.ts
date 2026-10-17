@@ -7,6 +7,7 @@
  * - an emoji              `char bot "Robo" emoji=🤖 happy=😀`
  * - a spritesheet         `char cat "Cat" sheet=cat.json anim=idle`
  * - a custom type         `char x "X" type=spine …` (LiaPixi.defineActor)
+ * - a defined character   `char k "Khadija" khadija` (LiaPixi.defineCharacter, merged by the parser)
  */
 import { AnimatedSprite, Assets, Container, Sprite, Spritesheet, Text, Texture } from 'pixi.js'
 import { Figure, figureStyle } from './base/figures'
@@ -43,6 +44,7 @@ const RESERVED = new Set([
   'talk',
   'blink',
   'idle',
+  'base',
   'skin',
   'hair',
   'shirt',
@@ -255,10 +257,6 @@ export async function loadTexture(url: string): Promise<Texture> {
   return Assets.load<Texture>({ src: url, parser: 'texture' })
 }
 
-async function texture(src: string, script: Script): Promise<Texture> {
-  return loadTexture(absolute(src, script))
-}
-
 /** wraps what a custom actor factory returned (a Container or an Actor-like object) */
 function wrap(x: any): Actor {
   if (x && x.view) {
@@ -278,6 +276,8 @@ function wrap(x: any): Actor {
 
 export async function createActor(def: Def, script: Script, ctx: any): Promise<Actor> {
   const kv = def.kv
+  // files of a character are relative to its `base=` (e.g. from LiaPixi.defineCharacter)
+  const url = (s: string) => absolute(kv.base ? new URL(s, absolute(kv.base, script)).href : s, script)
   const type = kv.type?.toLowerCase()
   if (type && actorTypes[type]) return wrap(await actorTypes[type](ctx, def))
   if (type && !actorTypes[type]) console.warn(`LiaPixi: unknown actor type "${type}" for ${def.id}`)
@@ -289,7 +289,7 @@ export async function createActor(def: Def, script: Script, ctx: any): Promise<A
   }
 
   if (kv.sheet) {
-    const sheet = await Assets.load<Spritesheet>(absolute(kv.sheet, script))
+    const sheet = await Assets.load<Spritesheet>(url(kv.sheet))
     return new SheetActor(sheet, def)
   }
 
@@ -302,12 +302,12 @@ export async function createActor(def: Def, script: Script, ctx: any): Promise<A
   }
 
   // an image with optional expression, talking and blinking images
-  const textures: Record<string, Texture> = { '': await texture(src, script) }
+  const textures: Record<string, Texture> = { '': await loadTexture(url(src)) }
   const frames = Object.keys(kv).filter(isFrameKey)
   await Promise.all(
     [...expressions(def), ...frames].map(async (e) => {
       try {
-        textures[e] = await texture(kv[e], script)
+        textures[e] = await loadTexture(url(kv[e]))
       } catch (err) {
         console.warn(`LiaPixi: could not load ${kv[e]} for ${def.id} ${e}`)
       }

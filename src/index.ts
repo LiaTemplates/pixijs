@@ -5,7 +5,7 @@
 import * as PIXI from 'pixi.js'
 import { parse } from './dsl/parser'
 import { evaluate } from './runtime/expr'
-import { defineCommand, defineActor, on, commands } from './runtime/registry'
+import { defineCommand, defineActor, defineCharacter, on, commands } from './runtime/registry'
 import { define, stories, location, LiaPixiStory } from './element'
 import { BACKGROUNDS } from './base/backgrounds'
 import { FIGURES, EXPRESSIONS } from './base/figures'
@@ -14,7 +14,7 @@ import * as persist from './persist'
 import { translate, translations } from './i18n'
 import type { ParseError } from './runtime/types'
 
-const VERSION = '0.2.0'
+const VERSION = '0.4.0'
 
 type Send = { lia: (...args: any[]) => void } | undefined
 
@@ -178,6 +178,7 @@ const LiaPixi = {
 
   defineCommand,
   defineActor,
+  defineCharacter,
   on,
 
   /** texts of the stage in other languages: LiaPixi.translate("ar", { continue: "متابعة" }) */

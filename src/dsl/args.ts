@@ -7,7 +7,8 @@ export type Args = {
   kv: Record<string, string>
 }
 
-const TOKEN = /([A-Za-z_][\w.-]*)=(?:"([^"]*)"|'([^']*)'|(\S+))|"([^"]*)"|'([^']*)'|(\S+)/g
+// keys may have umlauts like the expressions in a speaker line (`überrascht=…`, `k überrascht: …`)
+const TOKEN = /([\p{L}_][\p{L}\p{N}_.-]*)=(?:"([^"]*)"|'([^']*)'|(\S+))|"([^"]*)"|'([^']*)'|(\S+)/gu
 
 /** `anna "Anna Lee" base:girl color=#e55 voice="de-DE Female"` → pos + kv */
 export function tokenize(rest: string): Args {

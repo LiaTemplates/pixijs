@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parse } from '../src/dsl/parser'
 import { Story } from '../src/runtime/story'
 import { evaluate, interpolate, assign } from '../src/runtime/expr'
-import { defineCommand } from '../src/runtime/registry'
+import { defineCommand, defineCharacter } from '../src/runtime/registry'
 import type { Presenter, MenuItem, Snapshot } from '../src/runtime/types'
 import { tokenize } from '../src/dsl/args'
 import { expressions } from '../src/actors'
@@ -409,5 +409,35 @@ describe('image characters that feel alive', () => {
     await story.start()
     expect(states.map((s) => s.idle)).toEqual(['fidget', 'fidget'])
     expect(states[1].expr).toBe('sad')
+  })
+})
+
+describe('defined characters', () => {
+  it('merges a defined character into the char line, the line wins', () => {
+    defineCharacter('Khadija', { base: 'https://x.org/k/', src: 'neutral.png', sad: 'sad.png', 'sad.talk': 'sad-talk.png', color: '#111', scale: 0.8, idle: 'breathe' })
+    const { script, errors } = parse('char k "Khadija" khadija color=#c0392b\n# start\nk sad: Hi.\n')
+    expect(errors).toEqual([])
+    const def = script.characters.k
+    expect(def.src).toBe('neutral.png')
+    expect(def.name).toBe('Khadija')
+    expect(def.kv).toMatchObject({ base: 'https://x.org/k/', color: '#c0392b', scale: '0.8', idle: 'breathe' })
+    expect(expressions(def)).toEqual(['sad'])
+  })
+
+  it('reports unknown character names, builtin figures still work', () => {
+    defineCharacter('khadija', { src: 'neutral.png' })
+    const { errors } = parse('char a "A" girl\nchar b "B" base:boy\nchar k "K" khadia\n')
+    expect(errors.map((e) => e.line)).toEqual([3])
+    expect(errors[0].message).toContain('did you mean "khadija"')
+    expect(parse('char k "K" khadija idle=dance\n').errors[0].message).toContain('idle')
+  })
+
+  it('takes own expressions, also with umlauts', () => {
+    defineCharacter('lea', { src: 'n.png', Freude: 'f.png', 'freude.talk': 'ft.png' })
+    const { script, errors } = parse('char l "Lea" lea überrascht=ü.png überrascht.talk=üt.png\n# start\nl überrascht: Oh!\n')
+    expect(errors).toEqual([])
+    expect(expressions(script.characters.l).sort()).toEqual(['freude', 'überrascht'])
+    expect(script.characters.l.kv['überrascht.talk']).toBe('üt.png')
+    expect(isFrameKey('überrascht.talk')).toBe(true)
   })
 })

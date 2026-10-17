@@ -27,8 +27,8 @@ const CSS = `
 .lp-next{position:absolute;inset-inline-end:.8em;bottom:.4em;opacity:.8;animation:lp-bounce 1s infinite}
 @keyframes lp-bounce{50%{transform:translateY(.2em)}}
 .lp-choices{position:absolute;inset:0 0 28% 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5em;pointer-events:none}
-.lp-choices.lp-aside{inset:auto;inset-block-start:12%;inset-inline-end:2%;align-items:flex-end;justify-content:flex-start}
-.lp-choices.lp-aside button{min-width:0;font-size:.8em;padding:.4em .9em;white-space:nowrap}
+.lp-choices.lp-aside{inset:auto;inset-block-start:12%;inset-inline-end:2%;max-inline-size:40%;align-items:flex-end;justify-content:flex-start}
+.lp-choices.lp-aside button{min-width:0;max-width:100%;font-size:.8em;padding:.4em .9em;text-align:start}
 .lp-choices button{pointer-events:auto;min-width:45%;max-width:80%;padding:.55em 1.2em;border-radius:.6em;border:2px solid rgba(255,255,255,.35);
   background:rgba(30,40,70,.88);color:#fff;text-align:center;box-shadow:0 .25em .7em rgba(0,0,0,.35);transition:transform .12s,background .12s}
 .lp-choices button:hover,.lp-choices button:focus-visible{background:rgba(61,123,224,.95);transform:scale(1.03);outline:none}

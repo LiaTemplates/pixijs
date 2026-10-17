@@ -22,6 +22,16 @@ export function defineActor(type: string, factory: (ctx: any, def: any) => any) 
   changes.forEach((fn) => fn())
 }
 
+/** Characters for `char k "Khadija" <name>` – the options of a `char` line, added with LiaPixi.defineCharacter. */
+export const characters: Record<string, Record<string, string>> = {}
+
+export function defineCharacter(name: string, def: Record<string, string | number | boolean>) {
+  if (!/^[a-z][\w-]*$/i.test(name)) throw new Error(`invalid character name: ${name}`)
+  // keys lowercase like in a `char` line
+  characters[name.toLowerCase()] = Object.fromEntries(Object.entries(def || {}).map(([k, v]) => [k.toLowerCase(), String(v)]))
+  changes.forEach((fn) => fn())
+}
+
 /** called when commands or actor types change, so stories with errors can be parsed again */
 export function onChange(fn: () => void): () => void {
   changes.push(fn)

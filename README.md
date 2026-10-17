@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 email:    LiaScript@web.de
-version:  0.3.1
+version:  0.4.0
 language: en
 narrator: US English Female
 comment:  Interactive, branching picture stories for LiaScript, rendered with
@@ -302,7 +302,7 @@ your course with the `import:` statement in the header:
 
 or use a fixed version, so that later changes cannot break your course:
 
-`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.3.1/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.4.0/README.md`
 
 You can also copy the macros from the [Implementation](#implementation) section
 into your own header, or load only the bundle with
@@ -868,7 +868,9 @@ Expressions: `neutral`, `happy`, `sad`, `angry`, `surprised`, `thinking`,
 Characters can also be images (`char anna "Anna" img/anna.png`) with one image
 per expression (`happy=img/anna-happy.png`) and a speaking image
 (`talk=img/anna-talk.png`), an emoji (`emoji=🦊 happy=😺`), or a spritesheet
-(`sheet=cat.json`, expressions are animation names).
+(`sheet=cat.json`, expressions are animation names). For them the names of
+the expressions are free, e.g. `freude=img/f.png überrascht=img/ü.png` and
+`anna überrascht: Oh!`. Builtin figures only know the expressions above.
 
 ### Image characters that feel alive
 
@@ -922,6 +924,40 @@ __Recommended images__
 * Per expression three frames: __rest__ (mouth closed, eyes open), __talk__
   (mouth open) and __blink__ (eyes closed), which differ only in mouth and eyes.
   Easiest: draw the rest frame, copy it and change only the mouth or the eyes.
+
+### Characters for many stories
+
+Instead of repeating the long `char` line, a character can be defined once in
+a plugin and used by its name. The keys are the same as in the `char` line,
+`src` is the first image and `base` the folder of the images:
+
+```js
+LiaPixi.defineCharacter('khadija', {
+  base: 'https://example.org/characters/khadija/',
+  src: 'neutral.png', talk: 'neutral-talk.png', blink: 'neutral-blink.png',
+  sad: 'sad.png', 'sad.talk': 'sad-talk.png', 'sad.blink': 'sad-blink.png',
+  idle: 'breathe', voice: 'en-US Female'
+})
+```
+
+```text
+char k "Khadija" khadija color=#c0392b    ← keys in the line override the definition
+
+# start
+show k at left
+k sad: I am defined only once.
+```
+
+* Put the definition into a `@Pixi.plugin` block or, to use the character in
+  several courses, into a file that is loaded with `script:`. A relative `base`
+  is resolved from the course, so use a full URL for shared characters.
+* `base=` also works in a normal `char` line:
+  `char k "Khadija" neutral.png base=img/k/ sad=sad.png talk=talk.png`
+* A definition can also be an emoji (`emoji: '🦊'`), a spritesheet
+  (`sheet: 'cat.json'`) or a builtin figure in other colors
+  (`src: 'base:girl', hair: '#222'`).
+* For characters that need their own drawing code, see `defineActor` under
+  [Extending](#extending).
 
 ## Builtin backgrounds
 
@@ -1143,6 +1179,7 @@ __The JavaScript API__
 | ----------------------------------------- | -------------------------------------------------------- |
 | `LiaPixi.defineCommand(name, {parse, run, checkpoint})` | a new story command; `checkpoint: true` if it waits for the reader |
 | `LiaPixi.defineActor(type, (ctx, def) => container)` | a new character type: `char x "X" type=<type>` |
+| `LiaPixi.defineCharacter(name, {src, base, …})` | a reusable character: `char x "X" <name>`, see [Characters for many stories](#characters-for-many-stories) |
 | `LiaPixi.on(event, (story, data) => …)`   | `start`, `resume`, `label`, `say`, `choice`, `end`, `error` or `*` |
 | `LiaPixi.get(id)` / `check(id, expr)` / `reset(id)` | state of a story                               |
 | `LiaPixi.parse(source)`                   | `{ script, errors }` without running it                  |

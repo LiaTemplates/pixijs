@@ -1,5 +1,6 @@
 import { tokenize, brackets, rect } from './args'
-import { commands } from '../runtime/registry'
+import { characters, commands } from '../runtime/registry'
+import { FIGURES, figureStyle } from '../base/figures'
 import '../runtime/commands'
 import { check, assignment } from '../runtime/expr'
 import { idleMode } from '../fx/life'
@@ -301,6 +302,18 @@ export function parse(source: string): ParseResult {
       case 'char': {
         const def = definition(line, rest, true)
         if (!def.id) throw new Error('char needs a name: char anna "Anna" base:girl')
+        if (def.src && !/[./:]/.test(def.src)) {
+          const preset = characters[def.src.toLowerCase()]
+          if (preset) {
+            const { src, ...kv } = preset
+            def.src = src
+            def.kv = { ...kv, ...def.kv } // the line wins
+          } else if (!figureStyle(def.src)) {
+            // an error, so the story is parsed again when a plugin defines it later
+            const known = [...Object.keys(characters), ...Object.keys(FIGURES)]
+            throw new Error(`char ${def.id}: there is no character "${def.src}"${suggest(def.src.toLowerCase(), known)}`)
+          }
+        }
         if (idleMode(def.kv.idle) === null)
           throw new Error(`char ${def.id}: idle="${def.kv.idle}" is not an idle motion – use breathe, fidget or none`)
         script.characters[def.id] = def
