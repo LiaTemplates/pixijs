@@ -49,6 +49,10 @@ export interface Actor {
   act?(name?: string, seconds?: number): number | void
   /** bobs (and shows walking frames) while true */
   walk?(on: boolean): void
+  /** the part that moves (idle, gestures), objects are held relative to it; else the view */
+  body?: Container
+  /** where an object is held, in local units of `body` (else `hand=` of the definition is used) */
+  hand?(): { x: number; y: number }
   destroy(): void
 }
 
@@ -144,6 +148,9 @@ class FigureActor implements Actor {
   private blinker = new Blinker()
   private blinking = false
   private idle = new Idler('none')
+  get body() {
+    return this.figure
+  }
   constructor(readonly figure: Figure) {
     // smaller figures (kid) get a larger reference height, so they are scaled down
     this.height = Figure.HEIGHT / (figure.style.size || 1)
@@ -187,6 +194,9 @@ class SpriteActor implements Actor {
   private speaking = new Speaking()
   private blinker = new Blinker()
   private blinking = false
+  get body() {
+    return this.sprite
+  }
   /** no talking image for this expression: the image is stretched a little instead */
   private stretch = false
   private idle: Idler
@@ -259,6 +269,9 @@ class EmojiActor implements Actor {
   private text: Text
   private open = false
   private idle: Idler
+  get body() {
+    return this.text
+  }
   constructor(
     private emoji: Record<string, string>,
     idle: Idle = 'none'
@@ -312,6 +325,9 @@ class SheetActor implements Actor {
   private name: string
   private speaking = new Speaking()
   private idle: Idler
+  get body() {
+    return this.anim
+  }
   constructor(
     private sheet: Spritesheet,
     private def: Def
@@ -396,6 +412,8 @@ function wrap(x: any): Actor {
       setIdle: (m) => x.setIdle?.(m),
       act: (n, s) => x.act?.(n, s),
       walk: (on) => x.walk?.(on),
+      body: x.body,
+      hand: x.hand && (() => x.hand()),
       destroy: () => (x.destroy ? x.destroy() : x.view.destroy({ children: true })),
       view: x.view,
     }

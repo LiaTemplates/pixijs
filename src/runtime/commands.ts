@@ -284,6 +284,7 @@ defineCommand('show', {
   run: async (ctx, a) => {
     const old: ActorState | undefined = ctx.visual.actors[a.id]
     const state: ActorState = { ...(old || {}), x: a.x ?? old?.x ?? 0.5 }
+    if (a.x !== undefined) delete state.held
     if (a.expr !== undefined) state.expr = a.expr
     if (a.y !== undefined) state.y = a.y
     if (a.flip !== undefined) state.flip = a.flip
@@ -310,6 +311,8 @@ defineCommand('hide', {
   },
   run: async (ctx, a) => {
     const ids = a.id === 'all' ? Object.keys(ctx.visual.actors) : [a.id]
+    // what they hold leaves with them
+    for (const [id, s] of Object.entries(ctx.visual.actors)) if (s.held && ids.includes(s.held) && !ids.includes(id)) ids.push(id)
     const jobs = ids.map((id) => {
       const x = ctx.visual.actors[id]?.x
       delete ctx.visual.actors[id]
@@ -331,6 +334,7 @@ defineCommand('move', {
   run: async (ctx, a) => {
     const old: ActorState = ctx.visual.actors[a.id] || { x: 0.5 }
     const state: ActorState = { ...old }
+    if (a.x !== undefined) delete state.held
     if (a.x !== undefined) state.x = a.x
     if (a.y !== undefined) state.y = a.y
     if (a.scale !== undefined) state.scale = a.scale
@@ -361,6 +365,56 @@ defineCommand('act', {
     return { id, name, dur: d, alt: kv.alt }
   },
   run: (ctx, a) => ctx.view.act(a.id, a.name, { dur: a.dur, alt: a.alt ? ctx.text(a.alt) : undefined }),
+})
+
+// --- objects ----------------------------------------------------------------
+
+/** `take mia key`, `give mia key to tom`, `drop mia key at 40%` */
+function objectArgs(rest: string, info: ParseInfo, cmd: string) {
+  const { pos: words, kv } = tokenize(rest)
+  const who = actor(words.shift(), info, cmd)
+  if (!info.script.characters[who]) throw new Error(`${cmd}: "${who}" is an image – use: ${cmd} <character> <object>`)
+  const item = actor(words.shift(), info, cmd)
+  if (item === who) throw new Error(`${cmd}: ${who} cannot ${cmd} itself`)
+  return { who, item, words, kv }
+}
+
+async function carry(ctx: Ctx, item: string, to: string | undefined, from: string | undefined, o: { kind: 'takes' | 'gives' | 'drops'; x?: number; alt?: string }) {
+  const old: ActorState | undefined = ctx.visual.actors[item]
+  const state: ActorState = { ...(old || {}), x: o.x ?? ctx.visual.actors[to ?? from ?? '']?.x ?? old?.x ?? 0.5 }
+  if (to) state.held = to
+  else delete state.held
+  ctx.visual.actors[item] = state
+  await ctx.view.hold(item, { state, from, kind: o.kind, alt: o.alt ? ctx.text(o.alt) : undefined })
+}
+
+defineCommand('take', {
+  parse: (rest, info) => {
+    const { who, item, kv } = objectArgs(rest, info, 'take')
+    return { who, item, alt: kv.alt }
+  },
+  // from the hand of another character, if somebody holds it
+  run: (ctx, a) => carry(ctx, a.item, a.who, ctx.visual.actors[a.item]?.held, { kind: 'takes', alt: a.alt }),
+})
+
+defineCommand('give', {
+  parse: (rest, info) => {
+    const { who, item, words, kv } = objectArgs(rest, info, 'give')
+    if (words[0]?.toLowerCase() === 'to') words.shift()
+    const to = actor(words[0] || undefined, info, 'give')
+    if (!info.script.characters[to]) throw new Error(`give: "${to}" is an image – use: give mia key to tom`)
+    return { who, item, to, alt: kv.alt }
+  },
+  run: (ctx, a) => carry(ctx, a.item, a.to, a.who, { kind: 'gives', alt: a.alt }),
+})
+
+defineCommand('drop', {
+  parse: (rest, info) => {
+    const { who, item, words, kv } = objectArgs(rest, info, 'drop')
+    const o = stageArgs(words, kv, 'drop')
+    return { who, item, x: o.x, alt: kv.alt }
+  },
+  run: (ctx, a) => carry(ctx, a.item, undefined, a.who, { kind: 'drops', x: a.x, alt: a.alt }),
 })
 
 // --- sound ------------------------------------------------------------------

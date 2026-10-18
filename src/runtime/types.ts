@@ -51,6 +51,8 @@ export type ActorState = {
   scale?: number
   /** idle motion of image and spritesheet characters: breathe, fidget or none */
   idle?: string
+  /** an object in the hand of this character (`take mia key`) */
+  held?: string
 }
 
 /** Everything that is visible or audible – stored with every checkpoint to restore a scene. */
@@ -90,6 +92,11 @@ export interface Presenter {
   move(id: string, o: { state: ActorState; dur: number; ease?: string; walk?: boolean }): Promise<void>
   /** plays a gesture (`nod`, `wave` …) and resolves when it is over; `alt` is told to screen readers */
   act(id: string, name: string, o: { dur?: number; alt?: string }): Promise<void>
+  /**
+   * moves an object into the hand of `state.held` or, without it, to the ground at `state.x`;
+   * `from` is the character that gives or drops it
+   */
+  hold(id: string, o: { state: ActorState; from?: string; kind: 'takes' | 'gives' | 'drops'; alt?: string }): Promise<void>
   /** shows a line of dialog and resolves when the reader moves on */
   say(speaker: string | null, text: string, o: { expr?: string }): Promise<void>
   /** resolves with the index of the chosen item */

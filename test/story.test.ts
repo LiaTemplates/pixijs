@@ -17,6 +17,7 @@ function mock(picks: (number | string)[] = [], inputs: string[] = []) {
     hide: async (id) => void log.push(`hide ${id}`),
     move: async (id, o) => void log.push(`move ${id} ${o.state.x}`),
     act: async (id, name) => void log.push(`act ${id} ${name}`),
+    hold: async (id, o) => void log.push(`${o.kind} ${id} ${o.from ?? '-'} ${o.state.held ?? o.state.x}`),
     say: async (speaker, text) => void log.push(`${speaker ?? ''}: ${text}`),
     menu: async (items: MenuItem[]) => {
       log.push(`menu ${items.map((i) => i.text).join(' | ')}`)
@@ -523,5 +524,47 @@ describe('walking and gestures', () => {
     expect(log).toContain('act mia nod')
     expect(log).toContain('act mia wave')
     expect(log.indexOf('act mia wave')).toBeLessThan(log.indexOf('mia: Hi'))
+  })
+})
+
+describe('objects', () => {
+  const HEAD = 'char mia "Mia" base:girl\nchar tom "Tom" base:boy hand=0.2,0.5\nimage key img/key.png alt=key\n'
+
+  it('takes, gives and drops and keeps it in the scene state', async () => {
+    const { script, errors } = parse(
+      HEAD +
+        '# start\nshow mia at left\nshow tom at right\ntake mia key\nmia: Mine.\ngive mia key to tom\ntom: Thanks.\n' +
+        'drop tom key at 40%\ntake tom key alt="Tom picks it up"\nhide tom\n: Gone.\n'
+    )
+    expect(errors).toEqual([])
+    const saves: Snapshot[] = []
+    const { view, log } = mock()
+    await new Story(script, view, { save: (s) => saves.push(s) }).start()
+    expect(log.filter((l) => /^(takes|gives|drops|hide)/.test(l))).toEqual([
+      'takes key - mia',
+      'gives key mia tom',
+      'drops key tom 0.4',
+      'takes key - tom',
+      'hide tom',
+      'hide key',
+    ])
+    const at = (text: string) => saves.find((s) => script.nodes[s.pc].args.text === text)!.visual.actors
+    expect(at('Mine.').key).toEqual({ x: 0.27, held: 'mia' })
+    expect(at('Thanks.').key).toEqual({ x: 0.73, held: 'tom' })
+    expect(at('Gone.').key).toBeUndefined()
+    expect(script.nodes.find((n) => n.cmd === 'take' && n.args.alt)!.args.alt).toBe('Tom picks it up')
+  })
+
+  it('lets go when the object is moved, checks the names', () => {
+    const { errors } = parse(HEAD + '# start\ntake key mia\ngive mia key\ntake mia mia\ndrop mia key at nowhere\ntake mia door\n')
+    expect(errors.map((e) => e.line)).toEqual([5, 6, 7, 8, 9])
+  })
+
+  it('a new position lets go of the object', async () => {
+    const { script } = parse(HEAD + '# start\nshow mia at left\ntake mia key\nshow key at center\nmia: Hm.\n')
+    const saves: Snapshot[] = []
+    const { view } = mock()
+    await new Story(script, view, { save: (s) => saves.push(s) }).start()
+    expect(saves[saves.length - 1].visual.actors.key).toEqual({ x: 0.5 })
   })
 })

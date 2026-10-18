@@ -31,6 +31,10 @@ export type Labels = {
   /** for screen readers, `{name}` is the character or object */
   appears: string
   disappears: string
+  /** for screen readers, `{name}` takes, gives or drops `{item}` (to `{to}`) */
+  takes: string
+  gives: string
+  drops: string
   /** for screen readers: how the stage is used with keys */
   keys: string
 }
@@ -130,6 +134,10 @@ const spoken: Record<string, [string, string, string]> = {
   vi: ['{name} xuất hiện', '{name} biến mất', 'Phím cách: tiếp tục, phím mũi tên: tới và lui, 1–9: chọn, Escape: rời câu chuyện'],
 }
 for (const [k, [appears, disappears, keys]] of Object.entries(spoken)) Object.assign(translations[k], { appears, disappears, keys })
+
+// objects – the other languages read the English text, a story can change it: option label.takes="…"
+Object.assign(translations.en, { takes: '{name} takes {item}', gives: '{name} gives {item} to {to}', drops: '{name} puts down {item}' })
+Object.assign(translations.de, { takes: '{name} nimmt {item}', gives: '{name} gibt {item} an {to}', drops: '{name} legt {item} ab' })
 
 // the same language under another code
 translations.no = translations.nb

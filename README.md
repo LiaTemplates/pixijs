@@ -630,6 +630,55 @@ spritesheets play the animation of that name once.
 * Walking and gestures are not stored, only where a character stands. After
   "back" everybody stands still at their place.
 
+## Objects
+
+    --{{0}}--
+Characters can take objects, give them to others and put them down. An object
+in a hand goes along when the character walks.
+
+```text @Pixi.story
+bg   park base:village
+char mia "Mia" base:girl color=#e8556d
+char tom "Tom" base:boy  color=#3d7be0
+image key emoji=🔑 scale=0.3 alt="the key"
+
+# start
+bg park fade 1
+show mia at left
+show tom at right
+show key at center fade 0.5
+mia: Look, a key!
+move mia to center-left walk
+take mia key
+mia happy: Got it.
+move mia to left walk
+tom: Can I see it?
+give mia key to tom
+tom thinking: It is the key to the old house.
+drop tom key at center
+tom: But I do not want it.
+```
+
+| line                         | meaning                                                              |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `take mia key`               | the object moves into the hand of mia (it appears there if it was not shown) |
+| `give mia key to tom`        | from the hand of mia into the hand of tom                            |
+| `drop mia key`               | falls to the ground below mia, or `at center`, `at 40%`             |
+| `take mia key alt="Mia picks up the key"` | own text for screen readers                             |
+
+* Objects are `image` definitions, also emojis (`image key emoji=🔑`) –
+  characters can be carried too (`take mia bot`).
+* The hand: `hand=x,y` in the `char` line, as fractions of the height of the
+  character from the feet, x towards the right side: `hand=0.3,0.45` is the
+  default. Builtin characters with `arms=on` hold it in their real hand.
+* `show key at …` or `move key to …` takes it out of the hand, `hide mia` also
+  hides what she holds. The objects in the hands are stored, so they are back
+  in the right hands after "back" or when the story is continued.
+* Screen readers hear who takes, gives or drops what, using the `alt=` of the
+  image as its name. The texts exist in English and German, other languages
+  read the English ones – a story can set its own:
+  `option label.takes="{name} prend {item}" label.gives="{name} donne {item} à {to}" label.drops="{name} pose {item}"`
+
 ## Effects
 
     --{{0}}--
