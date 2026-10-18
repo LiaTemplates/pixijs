@@ -12,7 +12,7 @@
  * spritesheets also with their own frames (`walk=a.png,b.png act.wave=…`).
  */
 import { AnimatedSprite, Assets, Container, Sprite, Spritesheet, Text, Texture } from 'pixi.js'
-import { Figure, figureStyle } from './base/figures'
+import { Figure, armPose, figureStyle } from './base/figures'
 import { actorTypes } from './runtime/registry'
 import { absolute } from './assets'
 import {
@@ -52,7 +52,9 @@ export interface Actor {
   /** the part that moves (idle, gestures), objects are held relative to it; else the view */
   body?: Container
   /** where an object is held, in local units of `body` (else `hand=` of the definition is used) */
-  hand?(): { x: number; y: number }
+  hand?(): { x: number; y: number } | undefined
+  /** the character holds an object (or no longer) */
+  carry?(on: boolean): void
   destroy(): void
 }
 
@@ -139,6 +141,9 @@ class Idler {
   }
 }
 
+/** gestures a figure with arms plays with its arms */
+const ARM_GESTURES = new Set(['wave', 'point', 'shrug', 'cross', 'hips', 'think', 'cheer', 'take', 'give'])
+
 /** the length of a gesture: given, else its default, else `fallback` */
 const gestureLength = (name: string, seconds?: number, fallback = 1) => seconds ?? GESTURES[name] ?? fallback
 
@@ -148,6 +153,7 @@ class FigureActor implements Actor {
   private blinker = new Blinker()
   private blinking = false
   private idle = new Idler('none')
+  private holding = false
   get body() {
     return this.figure
   }
@@ -164,11 +170,19 @@ class FigureActor implements Actor {
   }
   act(name?: string, seconds?: number) {
     const s = name ? gestureLength(name, seconds) : 0
-    this.idle.act(name, s)
+    // with arms, gestures of the arms are not played with the body
+    const arms = !!name && !!this.figure.style.arms && ARM_GESTURES.has(name)
+    this.idle.act(name, s, !arms)
     return s
   }
   walk(on: boolean) {
     this.idle.walk(on)
+  }
+  carry(on: boolean) {
+    this.holding = on
+  }
+  hand() {
+    return this.figure.hand()
   }
   update(ms: number) {
     // blink every few seconds
@@ -176,6 +190,13 @@ class FigureActor implements Actor {
     if (b !== this.blinking) this.figure.setBlink((this.blinking = b))
     this.idle.tick(ms)
     this.idle.apply(this.figure, Figure.HEIGHT)
+    if (this.figure.style.arms) {
+      const g = this.idle.gesture
+      const name = g && !g.body ? g.name : this.idle.walked >= 0 && !calm() ? 'walk' : undefined
+      // with reduced motion the arms take their pose at once and do not wave
+      this.figure.setArms(armPose(name, calm() ? 0 : g && !g.body ? g.time : this.idle.walked, this.holding))
+      this.figure.update(calm() ? 1000 : ms)
+    }
   }
   destroy() {
     this.view.destroy({ children: true })
@@ -414,6 +435,7 @@ function wrap(x: any): Actor {
       walk: (on) => x.walk?.(on),
       body: x.body,
       hand: x.hand && (() => x.hand()),
+      carry: (on) => x.carry?.(on),
       destroy: () => (x.destroy ? x.destroy() : x.view.destroy({ children: true })),
       view: x.view,
     }

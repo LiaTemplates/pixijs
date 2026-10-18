@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+// @ts-ignore vitest runs in node, the project has no @types/node
+import { readFileSync } from 'node:fs'
 import { parse } from '../src/dsl/parser'
 import { Story } from '../src/runtime/story'
 import { evaluate, interpolate, assign } from '../src/runtime/expr'
@@ -6,6 +8,7 @@ import { defineCommand, defineCharacter } from '../src/runtime/registry'
 import type { Presenter, MenuItem, Snapshot } from '../src/runtime/types'
 import { tokenize } from '../src/dsl/args'
 import { expressions } from '../src/actors'
+import { armPose, figureStyle } from '../src/base/figures'
 import { Blinker, GESTURES, REST, Speaking, bodyGesture, frameAt, frameList, gesturePose, idleMode, idlePose, isFrameKey, pickFrame, sheetAnimation, stepPose } from '../src/fx/life'
 
 /** a view that records everything and picks choices from a list */
@@ -566,5 +569,41 @@ describe('objects', () => {
     const { view } = mock()
     await new Story(script, view, { save: (s) => saves.push(s) }).start()
     expect(saves[saves.length - 1].visual.actors.key).toEqual({ x: 0.5 })
+  })
+})
+
+describe('arms of builtin figures', () => {
+  it('are only there with arms=on', () => {
+    expect(figureStyle('girl')!.arms).toBeUndefined()
+    expect(figureStyle('girl', { arms: 'on' })!.arms).toBe(true)
+    expect(figureStyle('girl', { arms: 'no' })!.arms).toBe(false)
+    expect(parse('char mia "Mia" base:girl arms=on\n').errors).toEqual([])
+    expect(expressions(parse('char k "K" img/k.png hand=0.2,0.5 arms=on\n').script.characters.k)).toEqual([])
+  })
+
+  it('know a pose for every arm gesture and rest otherwise', () => {
+    const rest = armPose(undefined)
+    expect(armPose('nod')).toEqual(rest)
+    expect(armPose(undefined, 0, true).r).not.toEqual(rest.r)
+    for (const name of ['wave', 'point', 'shrug', 'cross', 'hips', 'think', 'cheer', 'take', 'give', 'walk']) {
+      for (let ms = 0; ms < 2000; ms += 50) {
+        const p = armPose(name, ms)
+        for (const [s, e] of [p.l, p.r]) {
+          expect(Math.abs(s)).toBeLessThanOrEqual(170)
+          expect(Math.abs(e)).toBeLessThanOrEqual(150)
+        }
+      }
+      if (name !== 'walk') expect(armPose(name)).not.toEqual(rest)
+    }
+  })
+})
+
+describe('README', () => {
+  it('has stories without mistakes', () => {
+    defineCommand('confetti', { run: () => {} }) // added by a plugin in the README
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+    const stories = [...readme.matchAll(/```text @Pixi\.story\n([\s\S]*?)```/g)].map((m) => m[1])
+    expect(stories.length).toBeGreaterThan(10)
+    for (const story of stories) expect(parse(story).errors, story.slice(0, 80)).toEqual([])
   })
 })

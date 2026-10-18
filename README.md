@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 email:    LiaScript@web.de
-version:  0.4.0
+version:  0.5.0
 language: en
 narrator: US English Female
 comment:  Interactive, branching picture stories for LiaScript, rendered with
@@ -302,7 +302,7 @@ your course with the `import:` statement in the header:
 
 or use a fixed version, so that later changes cannot break your course:
 
-`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.4.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.5.0/README.md`
 
 You can also copy the macros from the [Implementation](#implementation) section
 into your own header, or load only the bundle with
@@ -580,7 +580,7 @@ their head, jump or bow – also while they speak.
 
 ```text @Pixi.story
 bg   park base:village
-char mia "Mia"  base:girl  color=#e8556d
+char mia "Mia"  base:girl  color=#e8556d arms=on
 char tom "Tom"  base:boy   color=#3d7be0
 char bot "Robo" emoji=🤖
 
@@ -617,7 +617,8 @@ Gestures of the whole body, for every character: `nod`, `shake`, `jump`,
 `hop`, `bow`, `shiver`.
 
 Gestures with the arms: `wave`, `point`, `shrug`, `cross`, `hips`, `think`,
-`cheer`, `take`, `give`. Characters without arms do a body gesture instead
+`cheer`, `take`, `give` – builtin characters get arms with `arms=on` (see
+[Builtin characters](#builtin-characters)). Characters without arms do a body gesture instead
 (`wave` and `cheer` → `hop`/`jump`, `point` and `shrug` → `nod`, `take` and
 `give` → `bow`; `cross`, `hips` and `think` only wait), so a story works with
 every character. Image characters can bring their own frames for any gesture
@@ -638,7 +639,7 @@ in a hand goes along when the character walks.
 
 ```text @Pixi.story
 bg   park base:village
-char mia "Mia" base:girl color=#e8556d
+char mia "Mia" base:girl color=#e8556d arms=on
 char tom "Tom" base:boy  color=#3d7be0
 image key emoji=🔑 scale=0.3 alt="the key"
 
@@ -974,6 +975,36 @@ k: Change skin, hair, shirt, eyes, hairstyle (short, long, bun, ponytail, curly,
 Expressions: `neutral`, `happy`, `sad`, `angry`, `surprised`, `thinking`,
 `wink`, `scared`, `laugh`, `sleepy`.
 
+__Arms:__ with `arms=on` a builtin character gets arms with shoulders and
+elbows. They hang at rest, swing a little while walking, hold objects in the
+right hand and play the gestures of the arms:
+
+```text @Pixi.story
+bg   sky base:sky
+char a "Ada"  base:woman   arms=on
+char b "Ben"  base:man     arms=on
+char c "Cleo" base:student arms=on
+
+# start
+bg sky
+show a at left
+show b at center
+show c at right
+a wave: Hello! I can wave …
+b point: … point over there …
+c shrug: … and shrug.
+a cross: Arms crossed.
+b hips: Hands on my hips.
+c thinking think: Let me think …
+act a cheer
+act b cheer
+c happy cheer: Hooray!
+```
+
+Without `arms=on` the characters look as before and do a body gesture
+instead (see [Walking and gestures](#walking-and-gestures)). `point` points to
+the right side; with `flip` to the left.
+
 Characters can also be images (`char anna "Anna" img/anna.png`) with one image
 per expression (`happy=img/anna-happy.png`) and a speaking image
 (`talk=img/anna-talk.png`), an emoji (`emoji=🦊 happy=😺`), or a spritesheet
@@ -1234,8 +1265,9 @@ arrow keys go to LiaScript and change the slide.
 * With "reduce motion" in the system settings, `shake` and `flash` are skipped,
   the bouncing and pulsing marks stand still and image characters do not
   breathe or fidget (`idle=`). Characters glide without steps, gestures of the
-  body are skipped and animations of gestures stay on their first image – the
-  story waits as long as the gesture would take.
+  body are skipped, arms take their pose without moving and animations of
+  gestures stay on their first image – the story waits as long as the gesture
+  would take.
 * A gesture is not read aloud. If it matters for the story, give it a text:
   `act mia nod alt="Mia nods"`.
 

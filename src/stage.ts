@@ -354,8 +354,16 @@ export class Stage implements Presenter {
     a.setIdle?.(state.idle)
     a.act?.(undefined)
     a.walk?.(false)
-    if (state.held) this.holders.set(id, state.held)
+    this.grip(id, state.held)
+  }
+
+  /** puts an object into the hand of `by`, or out of any hand; the characters know if they hold something */
+  private grip(id: string, by?: string) {
+    const old = this.holders.get(id)
+    if (by) this.holders.set(id, by)
     else this.holders.delete(id)
+    const holds = (c: string) => [...this.holders.values()].includes(c)
+    for (const c of [old, by]) if (c) this.actors.get(c)?.carry?.(holds(c))
   }
 
   /** the hand of a visible character on the actor layer: `hand()` of the actor, else `hand=x,y` (fractions of the height) */
@@ -385,7 +393,7 @@ export class Stage implements Presenter {
     const a = await this.actor(id)
     if (!a || this.destroyed) return
     const state = o.state
-    if (!state.held) this.holders.delete(id)
+    if (!state.held) this.grip(id)
     a.setExpression(state.expr)
     a.setIdle?.(state.idle)
     if (!a.view.visible || a.view.alpha === 0) {
@@ -412,7 +420,7 @@ export class Stage implements Presenter {
     if (!a || this.destroyed) return
     const state = o.state
     if (state.held) return // it stays in the hand
-    this.holders.delete(id)
+    this.grip(id)
     const s = this.scaleOf(id, a, state)
     const def = this.script.characters[id] || this.script.images[id]
     const flip = state.flip ?? yes(def?.kv.flip, false)
@@ -438,7 +446,7 @@ export class Stage implements Presenter {
   async hide(id: string, o: { fade?: number; to?: number; dur?: number; walk?: boolean }) {
     const a = this.actors.get(id) || (this.pending.has(id) ? await this.pending.get(id) : null)
     if (!a || !a.view.visible) return
-    this.holders.delete(id)
+    this.grip(id)
     this.tell('disappears', id)
     await Promise.all([
       this.tweens.to(a.view, { alpha: 0 }, o.fade || (o.to !== undefined ? o.dur ?? 0.8 : 0)),
@@ -463,7 +471,7 @@ export class Stage implements Presenter {
     if (!item || this.destroyed) return
     const state = o.state
     const by = state.held
-    this.holders.delete(id)
+    this.grip(id)
     if (!item.view.visible) {
       // it appears in the hand of the giver, or of the one who takes it
       this.place(id, item, { ...state, held: undefined })
@@ -479,12 +487,17 @@ export class Stage implements Presenter {
     this.ui.announce(o.alt ?? this.t[o.kind].replace('{name}', name(who)).replace('{item}', name(id)).replace('{to}', name(by)))
     if (who) void this.act(who, o.kind === 'takes' ? 'take' : 'give', {})
     if (o.kind === 'gives' && by) void this.act(by, 'take', {})
-    const end = by ? this.handOf(by) : { x: state.x * this.W, y: this.yOf(id, state) }
+    const ground = { x: state.x * this.W, y: this.yOf(id, state) }
+    const { x: sx, y: sy } = item.view.position
     await Promise.all([
       this.tweens.to(item.view, { alpha: 1 }, 0.25),
-      end ? this.tweens.to(item.view, { x: end.x, y: end.y }, by ? 0.5 : 0.6, by ? 'inout' : 'bounce') : null,
+      // the hand moves during the gesture, so its place is read every frame
+      this.tweens.to({ t: 0 }, { t: 1 }, by ? 0.5 : 0.6, by ? 'inout' : 'bounce', (e) => {
+        const end = by ? this.handOf(by) : ground
+        if (end && !item.view.destroyed) item.view.position.set(sx + (end.x - sx) * e, sy + (end.y - sy) * e)
+      }),
     ])
-    if (by && !this.destroyed) this.holders.set(id, by)
+    if (by && !this.destroyed) this.grip(id, by)
   }
 
   // --- dialog ---------------------------------------------------------------
@@ -762,7 +775,7 @@ export class Stage implements Presenter {
       if (!state) {
         a.view.visible = false
         a.view.alpha = 0
-        this.holders.delete(id)
+        this.grip(id)
         continue
       }
       this.place(id, a, state)

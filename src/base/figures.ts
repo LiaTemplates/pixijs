@@ -1,6 +1,7 @@
 /**
  * Built-in characters, drawn with PixiJS Graphics, so they can change their
  * expression and move the mouth while speaking: `char anna "Anna" base:girl`.
+ * With `arms=on` they get arms with shoulder and elbow joints for gestures.
  */
 import { Container, Graphics } from 'pixi.js'
 
@@ -16,6 +17,7 @@ export type FigureStyle = {
   earrings?: boolean
   size?: number
   kind?: 'human' | 'robot'
+  arms?: boolean
 }
 
 export const FIGURES: Record<string, FigureStyle> = {
@@ -44,6 +46,49 @@ function shade(hex: string, f: number): string {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
 }
 
+/** angles of the arms in degrees: [shoulder, elbow]; 0 = hanging down, more = outwards and up, less = inwards */
+export type ArmPose = { l: [number, number]; r: [number, number] }
+
+const REST: [number, number] = [8, 6]
+const HOLD: [number, number] = [28, 62]
+
+/**
+ * The arms for a gesture, `ms` since it started (for waving); `holding`: the
+ * right hand holds an object. Unknown names give the rest pose.
+ */
+export function armPose(name: string | undefined, ms = 0, holding = false): ArmPose {
+  const r = holding ? HOLD : REST
+  const swing = (a: number) => 10 * Math.sin((2 * Math.PI * ms) / 900 + a)
+  switch (name) {
+    case 'wave':
+      return { l: REST, r: [125, 35 + 28 * Math.sin((2 * Math.PI * ms) / 500)] }
+    case 'point':
+      return { l: REST, r: [82, 4] }
+    case 'shrug':
+      return { l: [35, 95], r: [35, 95] }
+    case 'cross':
+      return { l: [-38, -92], r: [-42, -100] }
+    case 'hips':
+      return { l: [38, -112], r: [38, -112] }
+    case 'think':
+      return { l: [-6, -104], r: [-70, -112] }
+    case 'cheer':
+      return { l: [158, 8 + swing(0)], r: [158, 8 - swing(0)] }
+    case 'take':
+    case 'give':
+      return { l: REST, r: [72, 10] }
+    case 'walk':
+      return { l: [REST[0] + swing(0) / 2, REST[1]], r: holding ? HOLD : [REST[0] - swing(0) / 2, REST[1]] }
+  }
+  return { l: REST, r }
+}
+
+const SHOULDER_X = 128
+const SHOULDER_Y = -250
+const UPPER = 125
+const FORE = 115
+const rad = (deg: number) => (deg * Math.PI) / 180
+
 const HEAD_Y = -440
 const HEAD_RX = 100
 const HEAD_RY = 118
@@ -57,12 +102,74 @@ export class Figure extends Container {
   private expr = 'neutral'
   private open = false
   private blink = false
+  /** upper arm and forearm of the left and the right arm (`arms=on`) */
+  private arms?: { l: [Container, Container]; r: [Container, Container] }
+  private pose: ArmPose = armPose(undefined)
+  private target: ArmPose = armPose(undefined)
 
   constructor(readonly style: FigureStyle) {
     super()
     this.addChild(this.back, this.body, this.head, this.face, this.front)
     this.drawStatic()
     this.drawFace()
+    if (style.arms) this.drawArms()
+  }
+
+  /** the pose the arms move to */
+  setArms(pose: ArmPose) {
+    this.target = pose
+  }
+
+  /** moves the arms smoothly towards their pose */
+  update(ms: number) {
+    if (!this.arms || this.destroyed) return
+    const k = Math.min(1, ms / 90)
+    for (const side of ['l', 'r'] as const) {
+      const [s, e] = this.pose[side]
+      const [ts, te] = this.target[side]
+      this.pose[side] = [s + (ts - s) * k, e + (te - e) * k]
+      const [upper, fore] = this.arms[side]
+      const sign = side === 'r' ? -1 : 1 // more = outwards: counterclockwise on the right
+      upper.rotation = sign * rad(this.pose[side][0])
+      fore.rotation = sign * rad(this.pose[side][1])
+    }
+  }
+
+  /** the right hand in local units, or undefined without arms */
+  hand(): { x: number; y: number } | undefined {
+    if (!this.arms) return undefined
+    const [s, e] = this.pose.r
+    const a = rad(s)
+    const b = rad(s + e)
+    return {
+      x: SHOULDER_X + UPPER * Math.sin(a) + FORE * Math.sin(b),
+      y: SHOULDER_Y + UPPER * Math.cos(a) + FORE * Math.cos(b),
+    }
+  }
+
+  private drawArms() {
+    const s = this.style
+    const robot = s.kind === 'robot'
+    const sleeve = shade(robot ? s.skin : s.shirt, 0.9)
+    const arm = (side: number): [Container, Container] => {
+      const upper = new Container()
+      const fore = new Container()
+      upper.position.set(side * SHOULDER_X, SHOULDER_Y)
+      upper.addChild(new Graphics().roundRect(-23, -16, 46, UPPER + 32, 23).fill(sleeve))
+      fore.position.set(0, UPPER)
+      fore.addChild(
+        new Graphics()
+          .roundRect(-20, -12, 40, FORE + 12, 20)
+          .fill(sleeve)
+          .circle(0, FORE, robot ? 22 : 25)
+          .fill(robot ? shade(s.skin, 0.7) : s.skin)
+      )
+      upper.addChild(fore)
+      this.addChild(upper)
+      return [upper, fore]
+    }
+    this.arms = { l: arm(-1), r: arm(1) }
+    this.update(1000)
   }
 
   /** the height in local units (used to scale the figure on the stage) */
@@ -361,5 +468,6 @@ export function figureStyle(name: string, kv: Record<string, string> = {}): Figu
   if (kv.glasses !== undefined) s.glasses = yes(kv.glasses)
   if (kv.beard !== undefined) s.beard = yes(kv.beard)
   if (kv.mustache !== undefined) s.mustache = yes(kv.mustache)
+  if (kv.arms !== undefined) s.arms = yes(kv.arms)
   return s
 }
