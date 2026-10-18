@@ -8,12 +8,31 @@
  * - a spritesheet         `char cat "Cat" sheet=cat.json anim=idle`
  * - a custom type         `char x "X" type=spine …` (LiaPixi.defineActor)
  * - a defined character   `char k "Khadija" khadija` (LiaPixi.defineCharacter, merged by the parser)
+ * All of them can walk (`move … walk`) and gesture (`act mia nod`), images and
+ * spritesheets also with their own frames (`walk=a.png,b.png act.wave=…`).
  */
 import { AnimatedSprite, Assets, Container, Sprite, Spritesheet, Text, Texture } from 'pixi.js'
 import { Figure, figureStyle } from './base/figures'
 import { actorTypes } from './runtime/registry'
 import { absolute } from './assets'
-import { Blinker, Speaking, calm, idleMode, idlePose, isFrameKey, pickFrame, sheetAnimation, type Idle } from './fx/life'
+import {
+  Blinker,
+  GESTURES,
+  Speaking,
+  bodyGesture,
+  calm,
+  combine,
+  frameAt,
+  frameList,
+  gesturePose,
+  idleMode,
+  idlePose,
+  isFrameKey,
+  pickFrame,
+  sheetAnimation,
+  stepPose,
+  type Idle,
+} from './fx/life'
 import type { Def, Script } from './runtime/types'
 
 export interface Actor {
@@ -26,6 +45,10 @@ export interface Actor {
   update?(ms: number): void
   /** changes the idle motion (`breathe`, `fidget`, `none`); undefined = the one of the definition */
   setIdle?(mode?: string): void
+  /** starts a gesture (`nod`, `wave` …), undefined stops it; may return its length in seconds */
+  act?(name?: string, seconds?: number): number | void
+  /** bobs (and shows walking frames) while true */
+  walk?(on: boolean): void
   destroy(): void
 }
 
@@ -57,6 +80,8 @@ const RESERVED = new Set([
   'x',
   'flip',
   'height',
+  'hand',
+  'arms',
 ])
 
 export function expressions(def: Def) {
@@ -68,45 +93,82 @@ function ownIdle(def: Def): Idle {
   return idleMode(def.kv.idle) || 'none'
 }
 
-/** moves a child of an actor view a little (the view itself is placed by the stage) */
+/**
+ * Moves a child of an actor view (the view itself is placed by the stage):
+ * idle motion, bobbing while walking and body gestures.
+ */
 class Idler {
   private time = Math.random() * 10000 // not all characters breathe in step
   mode: Idle
+  /** the running gesture; `body` = false: the actor shows it with its own frames */
+  gesture?: { name: string; time: number; dur: number; body: boolean }
+  /** milliseconds walked, -1 while standing */
+  walked = -1
   constructor(readonly own: Idle) {
     this.mode = own
   }
   set(mode?: string) {
     this.mode = idleMode(mode) || this.own
   }
+  act(name: string | undefined, seconds: number, body = true) {
+    this.gesture = name ? { name, time: 0, dur: seconds * 1000, body } : undefined
+  }
+  walk(on: boolean) {
+    this.walked = on ? 0 : -1
+  }
   tick(ms: number) {
     this.time += ms
+    if (this.walked >= 0) this.walked += ms
+    const g = this.gesture
+    if (g && (g.time += ms) >= g.dur) this.gesture = undefined
   }
   apply(target: Container, height: number, stretch = 1) {
-    const p = idlePose(calm() ? 'none' : this.mode, this.time)
+    let p = idlePose(calm() ? 'none' : this.mode, this.time)
+    if (!calm()) {
+      if (this.walked >= 0) p = combine(p, stepPose(this.walked))
+      const g = this.gesture
+      if (g?.body) p = combine(p, gesturePose(bodyGesture(g.name), g.time / g.dur))
+    }
     target.scale.set(p.sx, p.sy * stretch)
-    target.position.set(p.x * height, 0)
+    target.position.set(p.x * height, p.y * height)
     target.rotation = p.rotation
   }
 }
 
+/** the length of a gesture: given, else its default, else `fallback` */
+const gestureLength = (name: string, seconds?: number, fallback = 1) => seconds ?? GESTURES[name] ?? fallback
+
 class FigureActor implements Actor {
+  view = new Container()
   height: number
   private blinker = new Blinker()
   private blinking = false
-  constructor(readonly view: Figure) {
+  private idle = new Idler('none')
+  constructor(readonly figure: Figure) {
     // smaller figures (kid) get a larger reference height, so they are scaled down
-    this.height = Figure.HEIGHT / (view.style.size || 1)
+    this.height = Figure.HEIGHT / (figure.style.size || 1)
+    this.view.addChild(figure)
   }
   setExpression(e?: string) {
-    this.view.setExpression(e)
+    this.figure.setExpression(e)
   }
   talk(open: boolean) {
-    this.view.setMouth(open)
+    this.figure.setMouth(open)
+  }
+  act(name?: string, seconds?: number) {
+    const s = name ? gestureLength(name, seconds) : 0
+    this.idle.act(name, s)
+    return s
+  }
+  walk(on: boolean) {
+    this.idle.walk(on)
   }
   update(ms: number) {
     // blink every few seconds
     const b = this.blinker.tick(ms)
-    if (b !== this.blinking) this.view.setBlink((this.blinking = b))
+    if (b !== this.blinking) this.figure.setBlink((this.blinking = b))
+    this.idle.tick(ms)
+    this.idle.apply(this.figure, Figure.HEIGHT)
   }
   destroy() {
     this.view.destroy({ children: true })
@@ -115,7 +177,8 @@ class FigureActor implements Actor {
 
 /**
  * An image with optional images per expression (`sad=`), talking (`talk=`, `sad.talk=`)
- * and blinking frames (`blink=`, `sad.blink=`) and an idle motion (`idle=breathe`).
+ * and blinking frames (`blink=`, `sad.blink=`), an idle motion (`idle=breathe`) and
+ * animations for walking and gestures (`walk=a.png,b.png`, `act.wave=…`).
  */
 class SpriteActor implements Actor {
   view = new Container()
@@ -130,7 +193,8 @@ class SpriteActor implements Actor {
   constructor(
     private sprite: Sprite,
     private textures: Record<string, Texture>,
-    idle: Idle = 'none'
+    idle: Idle = 'none',
+    private anims: Record<string, Texture[]> = {}
   ) {
     sprite.anchor.set(0.5, 1)
     this.view.addChild(sprite)
@@ -149,22 +213,38 @@ class SpriteActor implements Actor {
     this.speaking.set(open)
     this.apply()
   }
+  act(name?: string, seconds?: number) {
+    const frames = name && this.anims['act.' + name]
+    const s = name ? gestureLength(name, seconds, frames ? frames.length / 8 : 1) : 0
+    this.idle.act(name, s, !frames)
+    this.apply()
+    return s
+  }
+  walk(on: boolean) {
+    this.idle.walk(on)
+    this.apply()
+  }
   update(ms: number) {
     this.speaking.tick(ms)
     // no blinking while speaking: the talking frames have open eyes
-    const b = this.blinker.tick(ms, !this.speaking.active)
-    if (b !== this.blinking) {
-      this.blinking = b
-      this.apply()
-    }
+    this.blinking = this.blinker.tick(ms, !this.speaking.active)
     this.idle.tick(ms)
-    this.idle.apply(this.sprite, this.height, this.stretch ? 1.015 : 1)
+    this.apply()
+  }
+  /** the running animation of a gesture or of walking, and its time */
+  private animation(): [Texture[], number] | null {
+    const g = this.idle.gesture
+    if (g && !g.body) return [this.anims['act.' + g.name], g.time]
+    if (this.idle.walked >= 0 && this.anims.walk) return [this.anims.walk, this.idle.walked]
+    return null
   }
   private apply() {
     const open = this.speaking.open
     const { key, frame } = pickFrame((k) => !!this.textures[k], this.expr, { open, blink: this.blinking })
-    this.stretch = open && frame !== 'talk'
-    const t = this.textures[key] || this.textures['']
+    const anim = this.animation()
+    // with reduced motion an animation stands still on its first frame
+    const t = anim ? anim[0][frameAt(anim[0].length, calm() ? 0 : anim[1])] : this.textures[key] || this.textures['']
+    this.stretch = open && (!!anim || frame !== 'talk')
     if (t && this.sprite.texture !== t) this.sprite.texture = t
     this.idle.apply(this.sprite, this.height, this.stretch ? 1.015 : 1)
   }
@@ -177,23 +257,53 @@ class EmojiActor implements Actor {
   view = new Container()
   height = 400
   private text: Text
-  constructor(private emoji: Record<string, string>) {
+  private open = false
+  private idle: Idler
+  constructor(
+    private emoji: Record<string, string>,
+    idle: Idle = 'none'
+  ) {
     this.text = new Text({ text: emoji[''], style: { fontSize: 320, fontFamily: 'Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, sans-serif' } })
     this.text.anchor.set(0.5, 1)
     this.view.addChild(this.text)
+    this.idle = new Idler(idle)
   }
   setExpression(e?: string) {
     this.text.text = (e && this.emoji[e]) || this.emoji['']
   }
+  setIdle(mode?: string) {
+    this.idle.set(mode)
+    this.apply()
+  }
   talk(open: boolean) {
-    this.text.scale.set(open ? 1.04 : 1, open ? 0.96 : 1)
+    this.open = open
+    this.apply()
+  }
+  act(name?: string, seconds?: number) {
+    const s = name ? gestureLength(name, seconds) : 0
+    this.idle.act(name, s)
+    return s
+  }
+  walk(on: boolean) {
+    this.idle.walk(on)
+  }
+  update(ms: number) {
+    this.idle.tick(ms)
+    this.apply()
+  }
+  private apply() {
+    this.idle.apply(this.text, this.height)
+    if (this.open) this.text.scale.set(this.text.scale.x * 1.04, this.text.scale.y * 0.96)
   }
   destroy() {
     this.view.destroy({ children: true })
   }
 }
 
-/** a spritesheet, expressions are animations; `<name>_talk` is played while speaking */
+/**
+ * A spritesheet, expressions are animations; `<name>_talk` is played while speaking,
+ * `walk` while walking and a gesture animation (`act cat wave`) once.
+ */
 class SheetActor implements Actor {
   view = new Container()
   height: number
@@ -231,19 +341,37 @@ class SheetActor implements Actor {
     this.speaking.set(open)
     this.play()
   }
+  act(name?: string, seconds?: number) {
+    const frames = name && this.sheet.animations[name]
+    // one pass of the animation (animationSpeed frames per tick at 60 ticks per second)
+    const s = name ? gestureLength(name, seconds, frames ? frames.length / (this.anim.animationSpeed * 60) : 1) : 0
+    this.idle.act(name, s, !frames)
+    this.play()
+    return s
+  }
+  walk(on: boolean) {
+    this.idle.walk(on)
+    this.play()
+  }
   update(ms: number) {
     const was = this.speaking.active
+    const gesture = this.idle.gesture
     this.speaking.tick(ms)
-    if (was !== this.speaking.active) this.play() // back to the normal animation
     this.idle.tick(ms)
+    if (was !== this.speaking.active || gesture !== this.idle.gesture) this.play() // back to the normal animation
     this.idle.apply(this.anim, this.height)
   }
   private play() {
-    const name = sheetAnimation((n) => !!this.sheet.animations[n], this.name, this.speaking.active)
+    const g = this.idle.gesture
+    const has = (n: string) => !!this.sheet.animations[n]
+    let name = sheetAnimation(has, this.name, this.speaking.active)
+    if (g && !g.body) name = g.name
+    else if (this.idle.walked >= 0 && has('walk')) name = 'walk'
     const frames = this.sheet.animations[name]
     if (frames && this.anim.textures !== frames) {
       this.anim.textures = frames
-      this.anim.play()
+      this.anim.loop = !(g && !g.body)
+      this.anim.gotoAndPlay(0)
     }
   }
   destroy() {
@@ -266,6 +394,8 @@ function wrap(x: any): Actor {
       talk: (o) => x.talk?.(o),
       update: (ms) => x.update?.(ms),
       setIdle: (m) => x.setIdle?.(m),
+      act: (n, s) => x.act?.(n, s),
+      walk: (on) => x.walk?.(on),
       destroy: () => (x.destroy ? x.destroy() : x.view.destroy({ children: true })),
       view: x.view,
     }
@@ -285,7 +415,7 @@ export async function createActor(def: Def, script: Script, ctx: any): Promise<A
   if (kv.emoji) {
     const map: Record<string, string> = { '': kv.emoji }
     for (const e of expressions(def)) map[e] = kv[e]
-    return new EmojiActor(map)
+    return new EmojiActor(map, ownIdle(def))
   }
 
   if (kv.sheet) {
@@ -301,17 +431,28 @@ export async function createActor(def: Def, script: Script, ctx: any): Promise<A
     return new FigureActor(new Figure(figureStyle('student', kv)!))
   }
 
-  // an image with optional expression, talking and blinking images
+  // an image with optional expression, talking and blinking images and animations
   const textures: Record<string, Texture> = { '': await loadTexture(url(src)) }
+  const anims: Record<string, Texture[]> = {}
+  const isAnim = (k: string) => k === 'walk' || k.startsWith('act.')
   const frames = Object.keys(kv).filter(isFrameKey)
+  const load = async (key: string, file: string) => {
+    try {
+      return await loadTexture(url(file))
+    } catch (err) {
+      console.warn(`LiaPixi: could not load ${file} for ${def.id} ${key}`)
+    }
+  }
   await Promise.all(
     [...expressions(def), ...frames].map(async (e) => {
-      try {
-        textures[e] = await loadTexture(url(kv[e]))
-      } catch (err) {
-        console.warn(`LiaPixi: could not load ${kv[e]} for ${def.id} ${e}`)
+      if (!isAnim(e)) {
+        const t = await load(e, kv[e])
+        if (t) textures[e] = t
+        return
       }
+      const list = (await Promise.all(frameList(kv[e]).map((f) => load(e, f)))).filter((t): t is Texture => !!t)
+      if (list.length) anims[e] = list
     })
   )
-  return new SpriteActor(new Sprite(textures['']), textures, ownIdle(def))
+  return new SpriteActor(new Sprite(textures['']), textures, ownIdle(def), anims)
 }

@@ -566,9 +566,69 @@ hide all fade 1
 | `show mia flip`, `scale=1.2`, `y=0.9`    | mirror, size, height (1 = bottom)           |
 | `show anna unsure idle=fidget`           | change the idle motion of an image or spritesheet character (`breathe`, `fidget`, `none`) |
 | `hide mia fade 1` / `hide mia to offright` / `hide all` | leave the stage              |
+| `move mia to right walk`                 | walk instead of gliding, see [Walking and gestures](#walking-and-gestures) |
+| `act mia jump`                           | a gesture: `nod`, `shake`, `jump`, `hop`, `bow`, `shiver`, `wave` …        |
 
 Positions: `offleft`, `far-left`, `left`, `center-left`, `center`,
 `center-right`, `right`, `far-right`, `offright`, or `30%`, `0.3`.
+
+## Walking and gestures
+
+    --{{0}}--
+Characters can walk instead of gliding over the stage, and they can nod, shake
+their head, jump or bow – also while they speak.
+
+```text @Pixi.story
+bg   park base:village
+char mia "Mia"  base:girl  color=#e8556d
+char tom "Tom"  base:boy   color=#3d7be0
+char bot "Robo" emoji=🤖
+
+# start
+bg park fade 1
+show mia at offleft
+move mia to left walk
+show tom at right from offright walk
+mia happy wave: Hi Tom!
+tom nod: Hi Mia. Did you see Robo?
+mia thinking shake: No …
+show bot at center fade 0.5
+act bot jump
+bot laugh hop: Here I am!
+act tom bow
+tom: Welcome, Robo.
+act mia shiver alt="Mia shivers"
+mia scared: It is cold here. Let's go!
+hide mia to offright walk
+hide tom to offright walk
+```
+
+| line                               | meaning                                                         |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `move mia to right walk`           | walk with steps; without a duration the time follows the way    |
+| `show mia from offleft at left walk` / `hide mia to offright walk` | walk in or out    |
+| `act mia jump`                     | a gesture, the story goes on when it is over                    |
+| `act mia bow 2s`                   | a gesture with its own length                                   |
+| `act mia nod alt="Mia nods"`       | `alt=` is read to screen readers                                |
+| `mia happy wave: Hi!`              | expression and gesture while she speaks                         |
+| `mia nod: Yes.`                    | one word: a gesture, if the character has no expression of that name |
+
+Gestures of the whole body, for every character: `nod`, `shake`, `jump`,
+`hop`, `bow`, `shiver`.
+
+Gestures with the arms: `wave`, `point`, `shrug`, `cross`, `hips`, `think`,
+`cheer`, `take`, `give`. Characters without arms do a body gesture instead
+(`wave` and `cheer` → `hop`/`jump`, `point` and `shrug` → `nod`, `take` and
+`give` → `bow`; `cross`, `hips` and `think` only wait), so a story works with
+every character. Image characters can bring their own frames for any gesture
+(`act.wave=w1.png,w2.png`, see
+[Image characters that feel alive](#image-characters-that-feel-alive)),
+spritesheets play the animation of that name once.
+
+* Walking does not turn the character around, use `flip` in the same line
+  if the character should look the other way: `move tom to left walk flip`.
+* Walking and gestures are not stored, only where a character stands. After
+  "back" everybody stands still at their place.
 
 ## Effects
 
@@ -898,6 +958,8 @@ The `char` definition must stay on one line.
 | `blink=`        | eyes closed, for the first image (and expressions without an image)          |
 | `<expr>.blink=` | eyes closed for this expression, e.g. `sad.blink=img/k/sad-blink.png`        |
 | `idle=`         | `breathe` (a slow, very small rise and fall), `fidget` (breathing plus small, irregular shifts of weight and a slight tilt – unsure, nervous) or `none` (default) |
+| `walk=`         | images of a step, shown one after another while walking: `walk=img/k/w1.png,img/k/w2.png` |
+| `act.<name>=`   | images of a gesture, shown one after another (8 per second) during `act k <name>`: `act.wave=img/k/wave1.png,img/k/wave2.png` – any name works, also `act.dance=…` |
 
 * While a line is spoken, the mouth switches between the image of the
   expression and its talking image: `<expr>.talk`, else `talk`. Without any
@@ -910,9 +972,13 @@ The `char` definition must stay on one line.
   `move … idle=none` changes it for the scene. It also works for spritesheet
   characters and `image` objects.
 * Spritesheets: if there is an animation `<name>_talk` (e.g. `idle_talk` next
-  to `idle`), it is played while the character speaks.
+  to `idle`), it is played while the character speaks. An animation `walk` is
+  played while walking, `act cat wave` plays the animation `wave` once. In a
+  dialog line every word is an expression (animation) of a spritesheet, so
+  write the gesture as second word: `cat idle wave: Meow!`
 * With "reduce motion" in the system settings, there is no idle motion.
-  Talking and blinking images still change.
+  Talking and blinking images still change, animations of walking and gestures
+  stay on their first image.
 
 __Recommended images__
 
@@ -1118,7 +1184,11 @@ arrow keys go to LiaScript and change the slide.
   back to the stage when a focused button disappears. Esc leaves the stage.
 * With "reduce motion" in the system settings, `shake` and `flash` are skipped,
   the bouncing and pulsing marks stand still and image characters do not
-  breathe or fidget (`idle=`).
+  breathe or fidget (`idle=`). Characters glide without steps, gestures of the
+  body are skipped and animations of gestures stay on their first image – the
+  story waits as long as the gesture would take.
+* A gesture is not read aloud. If it matters for the story, give it a text:
+  `act mia nod alt="Mia nods"`.
 
 ## Extending
 
@@ -1178,13 +1248,38 @@ __The JavaScript API__
 | function                                  | meaning                                                  |
 | ----------------------------------------- | -------------------------------------------------------- |
 | `LiaPixi.defineCommand(name, {parse, run, checkpoint})` | a new story command; `checkpoint: true` if it waits for the reader |
-| `LiaPixi.defineActor(type, (ctx, def) => container)` | a new character type: `char x "X" type=<type>` |
+| `LiaPixi.defineActor(type, (ctx, def) => container)` | a new character type: `char x "X" type=<type>`, see below |
 | `LiaPixi.defineCharacter(name, {src, base, …})` | a reusable character: `char x "X" <name>`, see [Characters for many stories](#characters-for-many-stories) |
 | `LiaPixi.on(event, (story, data) => …)`   | `start`, `resume`, `label`, `say`, `choice`, `end`, `error` or `*` |
 | `LiaPixi.get(id)` / `check(id, expr)` / `reset(id)` | state of a story                               |
 | `LiaPixi.parse(source)`                   | `{ script, errors }` without running it                  |
 | `LiaPixi.translate(lang, texts)`          | add or change the texts of the stage for a language      |
 | `LiaPixi.PIXI`, `window.PIXI`             | the bundled PixiJS                                       |
+
+A character type returns a `Container`, or an object with a `view` and
+optional methods the stage calls:
+
+```js
+LiaPixi.defineActor('blob', (ctx, def) => {
+  const view = new ctx.PIXI.Graphics().circle(0, -150, 150).fill(def.kv.color || '#4fa3d1')
+  return {
+    view,
+    height: 300,                        // local height, used to scale it to the stage
+    setExpression(expr) {},             // `show x happy`, `x happy: …`
+    talk(open) {},                      // mouth open or closed while speaking
+    update(ms) {},                      // every frame
+    act(name, seconds) { return 1 },    // `act x wave` – return the length in seconds
+    walk(on) {},                        // `move x to left walk`
+    hand() { return { x: 120, y: -150 } }, // where it holds objects (local units)
+    destroy() { view.destroy() }
+  }
+})
+```
+
+Skeletal animations made with [Spine](https://esotericsoftware.com) can be used
+this way with the official runtime `@esotericsoftware/spine-pixi-v8`: map
+`setExpression`, `act` and `walk` to `spine.state.setAnimation(…)`. The Spine
+runtimes need a Spine Editor license, so they are not part of this template.
 
 Inside a story, `js:` runs JavaScript with the same `ctx` (and the variables
 as `vars`):

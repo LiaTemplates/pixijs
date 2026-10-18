@@ -5,8 +5,8 @@
 import { defineCommand, commands } from './registry'
 import { tokenize, duration, position } from '../dsl/args'
 import { check, assignment } from './expr'
-import { idleMode } from '../fx/life'
-import type { ActorState, Ctx, MenuItem, Option, ParseInfo } from './types'
+import { GESTURES, idleMode } from '../fx/life'
+import type { ActorState, Ctx, Def, MenuItem, Option, ParseInfo } from './types'
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
@@ -49,7 +49,24 @@ function actor(id: string | undefined, info: ParseInfo, cmd: string) {
   return id
 }
 
-/** reads `at left fade 0.5 from right to center over 2s scale=1.2 y=0.9 flip ease=out` */
+/** walking speed in stage widths per second, for `move … walk` without a duration */
+const WALK = 0.3
+
+/** how long walking from a to b takes, unless a duration is given */
+const walkTime = (a: Record<string, any>, from: number | undefined, to: number | undefined) =>
+  a.dur ?? (a.walk && from !== undefined && to !== undefined ? Math.max(0.3, Math.abs(to - from) / WALK) : undefined)
+
+/**
+ * Is `name` a gesture of this character? Builtin gestures always are, own
+ * animations (`act.wave=…`) and any spritesheet or custom animation too.
+ */
+export function isGesture(def: Def | undefined, name: string): boolean {
+  if (name in GESTURES) return true
+  if (!def) return false
+  return def.kv['act.' + name] !== undefined || !!def.kv.sheet || !!def.kv.type
+}
+
+/** reads `at left fade 0.5 from right to center over 2s scale=1.2 y=0.9 flip ease=out walk` */
 function stageArgs(words: string[], kv: Record<string, string>, cmd: string) {
   const o: Record<string, any> = { words: [] as string[] }
   for (let i = 0; i < words.length; i++) {
@@ -76,6 +93,9 @@ function stageArgs(words: string[], kv: Record<string, string>, cmd: string) {
       case 'noflip':
       case 'unflip':
         o.flip = false
+        break
+      case 'walk':
+        o.walk = true
         break
       default:
         if (/^(\d+(\.\d+)?|\.\d+)(s|ms)$/.test(w)) o.dur = duration(w)
@@ -194,6 +214,8 @@ defineCommand('say', {
   run: async (ctx, a) => {
     const text = ctx.text(a.text)
     if (a.speaker && a.expr && ctx.visual.actors[a.speaker]) ctx.visual.actors[a.speaker].expr = a.expr
+    // `mia happy wave: Hello!` – the gesture runs while she speaks
+    if (a.speaker && a.gesture) ctx.view.act(a.speaker, a.gesture, {})
     ctx.emit('say', { speaker: a.speaker, text })
     const p = ctx.view.say(a.speaker, text, { expr: a.expr })
     ctx.visual.line = { speaker: a.speaker, text }
@@ -268,11 +290,13 @@ defineCommand('show', {
     if (a.scale !== undefined) state.scale = a.scale
     if (a.idle !== undefined) state.idle = a.idle
     ctx.visual.actors[a.id] = state
+    const from = old ? undefined : a.from
     await ctx.view.show(a.id, {
       state,
       fade: a.fade ?? (old ? 0 : a.from !== undefined ? 0 : 0.35),
-      from: old ? undefined : a.from,
-      dur: a.dur,
+      from,
+      dur: walkTime(a, from ?? old?.x, state.x),
+      walk: a.walk,
     })
   },
 })
@@ -282,13 +306,14 @@ defineCommand('hide', {
     const { pos: words, kv } = tokenize(rest)
     const id = actor(words.shift(), info, 'hide')
     const o = stageArgs(words, kv, 'hide')
-    return { id, fade: o.fade, to: o.x, dur: o.dur }
+    return { id, fade: o.fade, to: o.x, dur: o.dur, walk: o.walk }
   },
   run: async (ctx, a) => {
     const ids = a.id === 'all' ? Object.keys(ctx.visual.actors) : [a.id]
     const jobs = ids.map((id) => {
+      const x = ctx.visual.actors[id]?.x
       delete ctx.visual.actors[id]
-      return ctx.view.hide(id, { fade: a.fade ?? (a.to !== undefined ? 0 : 0.35), to: a.to, dur: a.dur })
+      return ctx.view.hide(id, { fade: a.fade ?? (a.to !== undefined ? 0 : 0.35), to: a.to, dur: walkTime(a, x, a.to), walk: a.walk })
     })
     await Promise.all(jobs)
   },
@@ -312,8 +337,30 @@ defineCommand('move', {
     if (a.flip !== undefined) state.flip = a.flip
     if (a.idle !== undefined) state.idle = a.idle
     ctx.visual.actors[a.id] = state
-    await ctx.view.move(a.id, { state, dur: a.dur ?? 1, ease: a.ease })
+    await ctx.view.move(a.id, {
+      state,
+      dur: walkTime(a, old.x, state.x) ?? 1,
+      ease: a.ease ?? (a.walk ? 'linear' : undefined),
+      walk: a.walk,
+    })
   },
+})
+
+defineCommand('act', {
+  parse: (rest, info) => {
+    const { pos: words, kv } = tokenize(rest)
+    const id = actor(words.shift(), info, 'act')
+    const name = (words.shift() || '').toLowerCase()
+    const def = info.script.characters[id] || info.script.images[id]
+    if (!name || !isGesture(def, name))
+      throw new Error(
+        `act ${id}: ${name ? `"${name}" is not a gesture` : 'which gesture?'} – use ${Object.keys(GESTURES).join(', ')}` +
+          ' or give the character an animation: act.' + (name || 'wave') + '=a.png,b.png'
+      )
+    const d = words[0] !== undefined ? dur(words[0], `act ${id} ${name}`) : undefined
+    return { id, name, dur: d, alt: kv.alt }
+  },
+  run: (ctx, a) => ctx.view.act(a.id, a.name, { dur: a.dur, alt: a.alt ? ctx.text(a.alt) : undefined }),
 })
 
 // --- sound ------------------------------------------------------------------

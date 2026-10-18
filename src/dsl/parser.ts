@@ -1,13 +1,13 @@
 import { tokenize, brackets, rect } from './args'
 import { characters, commands } from '../runtime/registry'
 import { FIGURES, figureStyle } from '../base/figures'
-import '../runtime/commands'
+import { isGesture } from '../runtime/commands'
 import { check, assignment } from '../runtime/expr'
 import { idleMode } from '../fx/life'
 import type { Node, ParseError, Script, Def, Option } from '../runtime/types'
 
 const LABEL = /^#+\s*([\p{L}\p{N}_.-]+)\s*$/u
-const SPEAKER = /^([\p{L}_][\p{L}\p{N}_-]*)(?:\s+([\p{L}\p{N}_-]+))?\s*:(?:\s+(.*)|\s*)$/u
+const SPEAKER = /^([\p{L}_][\p{L}\p{N}_-]*)(?:\s+([\p{L}\p{N}_-]+))?(?:\s+([\p{L}\p{N}_-]+))?\s*:(?:\s+(.*)|\s*)$/u
 
 /** words that define things in the head of a story (before the first label) */
 const HEAD_ONLY = new Set(['bg', 'sound', 'music'])
@@ -161,10 +161,20 @@ export function parse(source: string): ParseResult {
       return { line, cmd: word, args }
     }
 
-    // dialog: `anna: text` or `anna happy: text`
+    // dialog: `anna: text`, `anna happy: text`, `anna happy wave: text` or `anna nod: text`
     const m = SPEAKER.exec(t)
     if (m) {
-      return { line, cmd: 'say', args: { speaker: m[1], expr: m[2], text: m[3] || '' } }
+      const def = script.characters[m[1]]
+      let expr: string | undefined = m[2]
+      let gesture: string | undefined = m[3]?.toLowerCase()
+      // one word is a gesture if it is no expression (all animations of spritesheets and custom types are expressions)
+      const one = expr?.toLowerCase()
+      if (!gesture && one && def && !def.kv.sheet && !def.kv.type && def.kv[one] === undefined && isGesture(def, one)) {
+        gesture = one
+        expr = undefined
+      }
+      if (gesture && !isGesture(def, gesture)) throw new Error(`${m[1]}: "${gesture}" is not a gesture – use one word for the expression and one for the gesture: ${m[1]} happy wave: …`)
+      return { line, cmd: 'say', args: { speaker: m[1], expr, gesture, text: m[4] || '' } }
     }
 
     const known = Object.keys(commands).filter((c) => !c.startsWith('_'))

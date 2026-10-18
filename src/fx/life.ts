@@ -10,9 +10,25 @@
 export type Frame = 'talk' | 'blink'
 export type Idle = 'none' | 'breathe' | 'fidget'
 
-/** `talk`, `blink`, `sad.talk`, `sad.blink` – extra frames, not expressions */
+/** `talk`, `blink`, `sad.talk`, `sad.blink`, `walk`, `act.wave` – extra frames, not expressions */
 export function isFrameKey(key: string): boolean {
-  return key === 'talk' || key === 'blink' || /\.(talk|blink)$/.test(key)
+  return key === 'talk' || key === 'blink' || key === 'walk' || /\.(talk|blink)$/.test(key) || /^act\./.test(key)
+}
+
+/** `a.png, b.png` → the images of an animation (`walk=`, `act.wave=`), data urls keep their comma */
+export function frameList(value: string): string[] {
+  const list: string[] = []
+  for (const part of value.split(',').map((s) => s.trim())) {
+    const i = list.length - 1
+    if (i >= 0 && /^data:[^,]*$/.test(list[i])) list[i] += ',' + part
+    else list.push(part)
+  }
+  return list.filter(Boolean)
+}
+
+/** the frame of a looping animation after `ms` milliseconds (8 frames per second) */
+export function frameAt(count: number, ms: number, fps = 8): number {
+  return count ? Math.floor((ms * fps) / 1000) % count : 0
 }
 
 /**
@@ -93,9 +109,10 @@ export function idleMode(v: string | undefined): Idle | null | undefined {
   return null
 }
 
-export type Pose = { sx: number; sy: number; x: number; rotation: number }
+/** `x` and `y` are fractions of the height of the character, y < 0 is up */
+export type Pose = { sx: number; sy: number; x: number; y: number; rotation: number }
 
-export const REST: Pose = { sx: 1, sy: 1, x: 0, rotation: 0 }
+export const REST: Pose = { sx: 1, sy: 1, x: 0, y: 0, rotation: 0 }
 
 const wave = (t: number, period: number, phase = 0) => Math.sin((2 * Math.PI * t) / period + phase)
 
@@ -109,16 +126,89 @@ const wave = (t: number, period: number, phase = 0) => Math.sin((2 * Math.PI * t
 export function idlePose(mode: Idle, t: number): Pose {
   if (mode === 'breathe') {
     const b = wave(t, 4000)
-    return { sx: 1 + 0.0008 * b, sy: 1 + 0.0025 * b, x: 0, rotation: 0 }
+    return { sx: 1 + 0.0008 * b, sy: 1 + 0.0025 * b, x: 0, y: 0, rotation: 0 }
   }
   if (mode === 'fidget') {
     const b = wave(t, 3000)
     // incommensurable periods: the shifts never repeat exactly, with calm moments in between
     const w = 0.6 * wave(t, 2300) + 0.4 * wave(t, 3700, 1.3) * wave(t, 9100, 0.4)
     const r = 0.5 * wave(t, 2900, 2.1) + 0.5 * wave(t, 1700, 0.7) * wave(t, 6100)
-    return { sx: 1 + 0.0015 * b, sy: 1 + 0.004 * b, x: 0.006 * w, rotation: 0.012 * r }
+    return { sx: 1 + 0.0015 * b, sy: 1 + 0.004 * b, x: 0.006 * w, y: 0, rotation: 0.012 * r }
   }
   return REST
+}
+
+/** both poses at once: scales multiply, offsets and rotations add up */
+export function combine(a: Pose, b: Pose): Pose {
+  return { sx: a.sx * b.sx, sy: a.sy * b.sy, x: a.x + b.x, y: a.y + b.y, rotation: a.rotation + b.rotation }
+}
+
+/**
+ * Gestures (`act mia nod`) and their default length in seconds. The first ones
+ * move the whole body and work with every character, the others need arms
+ * (`arms=on`, `act.wave=` images or a spritesheet animation) – without arms
+ * they become the body motion in BODY.
+ */
+export const GESTURES: Record<string, number> = {
+  nod: 0.8,
+  shake: 0.9,
+  jump: 0.7,
+  hop: 0.8,
+  bow: 1.2,
+  shiver: 0.8,
+  wave: 1.6,
+  point: 1.2,
+  shrug: 1,
+  cross: 1.6,
+  hips: 1.6,
+  think: 1.6,
+  cheer: 1.2,
+  take: 0.6,
+  give: 0.6,
+}
+
+const BODY: Record<string, string> = { wave: 'hop', point: 'nod', shrug: 'nod', cheer: 'jump', take: 'bow', give: 'bow' }
+
+/** the body motion for a gesture of a character without arms ('' = none) */
+export function bodyGesture(name: string): string {
+  return BODY[name] ?? (name in GESTURES && !['cross', 'hips', 'think'].includes(name) ? name : '')
+}
+
+/** 0 → 1 → 0 between a and b, 0 outside */
+const bump = (t: number, a: number, b: number) => (t > a && t < b ? Math.sin((Math.PI * (t - a)) / (b - a)) : 0)
+
+/**
+ * A body gesture at `t` (0 … 1 of its length), REST at the start and the end.
+ * Characters are anchored at their feet, so squashing lowers the head (nod, bow).
+ */
+export function gesturePose(name: string, t: number): Pose {
+  if (t <= 0 || t >= 1) return REST
+  const env = Math.sin(Math.PI * t)
+  switch (name) {
+    case 'nod':
+      return { ...REST, sy: 1 - 0.03 * Math.abs(Math.sin(2 * Math.PI * t)) }
+    case 'shake':
+      return { ...REST, rotation: 0.04 * Math.sin(6 * Math.PI * t) * env }
+    case 'jump': {
+      // crouch, fly, land
+      const fly = bump(t, 0.15, 0.85)
+      return { ...REST, sy: 1 - 0.06 * bump(t, 0, 0.15) - 0.05 * bump(t, 0.85, 1) + 0.03 * fly, y: -0.14 * fly }
+    }
+    case 'hop':
+      return { ...REST, y: -0.05 * Math.abs(Math.sin(2 * Math.PI * t)) }
+    case 'bow':
+      // down, hold, up
+      return { ...REST, sy: 1 - 0.09 * Math.min(1, 2.5 * env) }
+    case 'shiver':
+      return { ...REST, x: 0.006 * Math.sin(28 * Math.PI * t) * env }
+  }
+  return REST
+}
+
+/** bobbing while walking, `ms` since the first step: up and down every step, a little tilt to each side */
+export function stepPose(ms: number, step = 450): Pose {
+  const s = Math.sin((Math.PI * ms) / step)
+  return { ...REST, y: -0.015 * Math.abs(s), rotation: 0.02 * s }
 }
 
 let query: MediaQueryList | null | undefined

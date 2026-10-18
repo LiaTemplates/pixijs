@@ -85,9 +85,11 @@ export type MenuItem = {
 /** The view a story talks to. The PixiJS stage implements it, tests use a mock. */
 export interface Presenter {
   background(ref: string | null, o: { fade?: number }): Promise<void>
-  show(id: string, o: { state: ActorState; fade?: number; from?: number; dur?: number }): Promise<void>
-  hide(id: string, o: { fade?: number; to?: number; dur?: number }): Promise<void>
-  move(id: string, o: { state: ActorState; dur: number; ease?: string }): Promise<void>
+  show(id: string, o: { state: ActorState; fade?: number; from?: number; dur?: number; walk?: boolean }): Promise<void>
+  hide(id: string, o: { fade?: number; to?: number; dur?: number; walk?: boolean }): Promise<void>
+  move(id: string, o: { state: ActorState; dur: number; ease?: string; walk?: boolean }): Promise<void>
+  /** plays a gesture (`nod`, `wave` …) and resolves when it is over; `alt` is told to screen readers */
+  act(id: string, name: string, o: { dur?: number; alt?: string }): Promise<void>
   /** shows a line of dialog and resolves when the reader moves on */
   say(speaker: string | null, text: string, o: { expr?: string }): Promise<void>
   /** resolves with the index of the chosen item */

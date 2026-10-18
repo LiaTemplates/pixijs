@@ -6,7 +6,7 @@ import { defineCommand, defineCharacter } from '../src/runtime/registry'
 import type { Presenter, MenuItem, Snapshot } from '../src/runtime/types'
 import { tokenize } from '../src/dsl/args'
 import { expressions } from '../src/actors'
-import { Blinker, Speaking, idleMode, idlePose, isFrameKey, pickFrame, sheetAnimation } from '../src/fx/life'
+import { Blinker, GESTURES, REST, Speaking, bodyGesture, frameAt, frameList, gesturePose, idleMode, idlePose, isFrameKey, pickFrame, sheetAnimation, stepPose } from '../src/fx/life'
 
 /** a view that records everything and picks choices from a list */
 function mock(picks: (number | string)[] = [], inputs: string[] = []) {
@@ -16,6 +16,7 @@ function mock(picks: (number | string)[] = [], inputs: string[] = []) {
     show: async (id, o) => void log.push(`show ${id} ${o.state.expr ?? ''} ${o.state.x}`.trim()),
     hide: async (id) => void log.push(`hide ${id}`),
     move: async (id, o) => void log.push(`move ${id} ${o.state.x}`),
+    act: async (id, name) => void log.push(`act ${id} ${name}`),
     say: async (speaker, text) => void log.push(`${speaker ?? ''}: ${text}`),
     menu: async (items: MenuItem[]) => {
       log.push(`menu ${items.map((i) => i.text).join(' | ')}`)
@@ -375,7 +376,7 @@ describe('image characters that feel alive', () => {
     expect(idleMode('Breathe')).toBe('breathe')
     expect(idleMode('off')).toBe('none')
     expect(idleMode('dance')).toBeNull()
-    expect(idlePose('none', 1234)).toEqual({ sx: 1, sy: 1, x: 0, rotation: 0 })
+    expect(idlePose('none', 1234)).toEqual({ sx: 1, sy: 1, x: 0, y: 0, rotation: 0 })
     for (let t = 0; t < 20000; t += 37) {
       const b = idlePose('breathe', t)
       expect(Math.abs(b.sy - 1)).toBeLessThanOrEqual(0.0025)
@@ -439,5 +440,88 @@ describe('defined characters', () => {
     expect(expressions(script.characters.l).sort()).toEqual(['freude', 'überrascht'])
     expect(script.characters.l.kv['überrascht.talk']).toBe('üt.png')
     expect(isFrameKey('überrascht.talk')).toBe(true)
+  })
+})
+
+describe('walking and gestures', () => {
+  const HEAD = 'char mia "Mia" base:girl\nchar k "K" img/k.png act.wave=w1.png,w2.png walk=a.png,b.png\nchar cat "Cat" sheet=cat.json\n'
+
+  it('moves the body only during a gesture and only a little', () => {
+    for (const name of Object.keys(GESTURES)) {
+      const body = bodyGesture(name)
+      expect(gesturePose(body, 0)).toEqual(REST)
+      expect(gesturePose(body, 1)).toEqual(REST)
+      for (let t = 0; t <= 1; t += 0.01) {
+        const p = gesturePose(body, t)
+        expect(Math.abs(p.sy - 1)).toBeLessThanOrEqual(0.1)
+        expect(Math.abs(p.sx - 1)).toBeLessThanOrEqual(0.1)
+        expect(p.y).toBeLessThanOrEqual(0)
+        expect(p.y).toBeGreaterThanOrEqual(-0.15)
+        expect(Math.abs(p.rotation)).toBeLessThanOrEqual(0.05)
+      }
+    }
+    expect(gesturePose('jump', 0.5).y).toBeLessThan(-0.1)
+    expect(bodyGesture('wave')).toBe('hop')
+    expect(bodyGesture('cross')).toBe('')
+    for (let ms = 0; ms < 5000; ms += 23) {
+      const p = stepPose(ms)
+      expect(p.y).toBeLessThanOrEqual(0)
+      expect(p.y).toBeGreaterThanOrEqual(-0.015)
+    }
+  })
+
+  it('reads walking and gesture frames, they are no expressions', () => {
+    const { script, errors } = parse(HEAD)
+    expect(errors).toEqual([])
+    expect(isFrameKey('walk')).toBe(true)
+    expect(isFrameKey('act.wave')).toBe(true)
+    expect(expressions(script.characters.k)).toEqual([])
+    expect(frameList(script.characters.k.kv['act.wave'])).toEqual(['w1.png', 'w2.png'])
+    expect(frameList('data:image/png;base64,AAA, data:image/png;base64,BBB,c.png')).toEqual([
+      'data:image/png;base64,AAA',
+      'data:image/png;base64,BBB',
+      'c.png',
+    ])
+    expect([0, 124, 125, 250, 375].map((ms) => frameAt(2, ms))).toEqual([0, 0, 1, 0, 1])
+  })
+
+  it('parses act, walk and gestures in dialog lines', () => {
+    const { script, errors } = parse(
+      HEAD +
+        '# start\nact mia jump\nact k wave 2s alt="K waves"\nact cat dance\nmove mia to right walk\nmove mia to left 3s walk\n' +
+        'mia happy wave: Hi!\nmia nod: Yes.\nmia sad: Oh.\ncat wave: Meow.\n'
+    )
+    expect(errors).toEqual([])
+    const n = script.nodes
+    expect(n[1].args).toMatchObject({ id: 'mia', name: 'jump' })
+    expect(n[2].args).toMatchObject({ id: 'k', name: 'wave', dur: 2, alt: 'K waves' })
+    expect(n[3].args).toMatchObject({ id: 'cat', name: 'dance' })
+    expect(n[4].args).toMatchObject({ walk: true, x: 0.73 })
+    expect(n[5].args).toMatchObject({ walk: true, dur: 3 })
+    expect(n[6].args).toMatchObject({ speaker: 'mia', expr: 'happy', gesture: 'wave', text: 'Hi!' })
+    expect(n[7].args).toMatchObject({ speaker: 'mia', gesture: 'nod' })
+    expect(n[7].args.expr).toBeUndefined()
+    expect(n[8].args).toMatchObject({ expr: 'sad' })
+    expect(n[8].args.gesture).toBeUndefined()
+    // a spritesheet animation of the same name stays an expression
+    expect(n[9].args).toMatchObject({ expr: 'wave' })
+
+    const bad = parse(HEAD + '# start\nact mia dance\nact mia\nmia happy dance: Hi\n')
+    expect(bad.errors.map((e) => e.line)).toEqual([5, 6, 7])
+    expect(bad.errors[0].message).toContain('nod, shake')
+  })
+
+  it('walks as long as the way is long and plays gestures', async () => {
+    const { script } = parse(HEAD + '# start\nshow mia at left\nmove mia to right walk\nact mia nod\nmia wave: Hi\n')
+    const { view, log } = mock()
+    const moves: any[] = []
+    view.move = async (_id, o) => void moves.push(o)
+    await new Story(script, view).start()
+    expect(moves[0].walk).toBe(true)
+    expect(moves[0].dur).toBeCloseTo((0.73 - 0.27) / 0.3)
+    expect(moves[0].ease).toBe('linear')
+    expect(log).toContain('act mia nod')
+    expect(log).toContain('act mia wave')
+    expect(log.indexOf('act mia wave')).toBeLessThan(log.indexOf('mia: Hi'))
   })
 })

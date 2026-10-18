@@ -8,7 +8,7 @@ import * as PIXI from 'pixi.js'
 import 'pixi.js/browser'
 import { Application, Assets, BlurFilter, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { Tweens } from './fx/tween'
-import { calm } from './fx/life'
+import { GESTURES, calm } from './fx/life'
 import { Audio } from './audio'
 import { Speech, parseVoice, available as ttsAvailable } from './tts'
 import { createActor, loadTexture, type Actor } from './actors'
@@ -344,9 +344,22 @@ export class Stage implements Presenter {
     a.view.scale.set(flip ? -s : s, s)
     a.setExpression(state.expr)
     a.setIdle?.(state.idle)
+    a.act?.(undefined)
+    a.walk?.(false)
   }
 
-  async show(id: string, o: { state: ActorState; fade?: number; from?: number; dur?: number }) {
+  /** runs a horizontal move, bobbing (and with walking frames) if `walk` is set */
+  private async walking<T>(a: Actor, walk: boolean | undefined, job: Promise<T>) {
+    if (!walk) return job
+    a.walk?.(true)
+    try {
+      return await job
+    } finally {
+      if (!a.view.destroyed) a.walk?.(false)
+    }
+  }
+
+  async show(id: string, o: { state: ActorState; fade?: number; from?: number; dur?: number; walk?: boolean }) {
     const a = await this.actor(id)
     if (!a || this.destroyed) return
     const state = o.state
@@ -362,14 +375,16 @@ export class Stage implements Presenter {
       a.view.alpha = o.fade ? 0 : 1
       await Promise.all([
         this.tweens.to(a.view, { alpha: 1 }, o.fade || 0),
-        o.from !== undefined ? this.tweens.to(a.view, { x: state.x * this.W }, o.dur ?? 0.8, 'out') : null,
+        o.from !== undefined
+          ? this.walking(a, o.walk, this.tweens.to(a.view, { x: state.x * this.W }, o.dur ?? 0.8, o.walk ? 'linear' : 'out'))
+          : null,
       ])
     } else {
-      await this.move(id, { state, dur: o.dur ?? 0.5 })
+      await this.move(id, { state, dur: o.dur ?? 0.5, ease: o.walk ? 'linear' : undefined, walk: o.walk })
     }
   }
 
-  async move(id: string, o: { state: ActorState; dur: number; ease?: string }) {
+  async move(id: string, o: { state: ActorState; dur: number; ease?: string; walk?: boolean }) {
     const a = await this.actor(id)
     if (!a || this.destroyed) return
     const state = o.state
@@ -388,23 +403,33 @@ export class Stage implements Presenter {
     const same = (p: number, q: number) => Math.abs(p - q) < 0.5
     // only the expression changed: nothing to animate
     if (same(a.view.x, x) && same(a.view.y, y) && Math.abs(Math.abs(a.view.scale.y) - s) < 1e-4) return
-    await this.tweens.to(
-      a.view,
-      { x, y, 'scale.x': flip ? -s : s, 'scale.y': s },
-      o.dur,
-      o.ease || 'inout'
+    await this.walking(
+      a,
+      o.walk && !same(a.view.x, x),
+      this.tweens.to(a.view, { x, y, 'scale.x': flip ? -s : s, 'scale.y': s }, o.dur, o.ease || 'inout')
     )
   }
 
-  async hide(id: string, o: { fade?: number; to?: number; dur?: number }) {
+  async hide(id: string, o: { fade?: number; to?: number; dur?: number; walk?: boolean }) {
     const a = this.actors.get(id) || (this.pending.has(id) ? await this.pending.get(id) : null)
     if (!a || !a.view.visible) return
     this.tell('disappears', id)
     await Promise.all([
       this.tweens.to(a.view, { alpha: 0 }, o.fade || (o.to !== undefined ? o.dur ?? 0.8 : 0)),
-      o.to !== undefined ? this.tweens.to(a.view, { x: o.to * this.W }, o.dur ?? 0.8, 'in') : null,
+      o.to !== undefined
+        ? this.walking(a, o.walk, this.tweens.to(a.view, { x: o.to * this.W }, o.dur ?? 0.8, o.walk ? 'linear' : 'in'))
+        : null,
     ])
     a.view.visible = false
+  }
+
+  async act(id: string, name: string, o: { dur?: number; alt?: string }) {
+    const a = await this.actor(id)
+    if (!a || this.destroyed || !a.view.visible) return
+    if (o.alt) this.ui.announce(o.alt)
+    const d = a.act?.(name, o.dur)
+    // on the ticker, so a paused stage pauses the gesture too
+    await this.tweens.wait(typeof d === 'number' ? d : (o.dur ?? GESTURES[name] ?? 1))
   }
 
   // --- dialog ---------------------------------------------------------------
