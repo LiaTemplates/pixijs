@@ -14,7 +14,7 @@ import * as persist from './persist'
 import { translate, translations } from './i18n'
 import type { ParseError } from './runtime/types'
 
-const VERSION = '0.5.0'
+const VERSION = '0.5.1'
 
 type Send = { lia: (...args: any[]) => void } | undefined
 

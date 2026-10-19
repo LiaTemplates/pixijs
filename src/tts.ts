@@ -1,7 +1,11 @@
 /**
- * Reads dialog lines with the Web Speech API. Every character can have its
- * own voice: `voice="de-DE Female"`, `voice="Deutsch Male"`, `voice="Google UK English Male"`
+ * Reads dialog lines aloud. Every character can have its own voice:
+ * `voice="de-DE Female"`, `voice="Deutsch Male"`, `voice="Google UK English Male"`
  * plus `pitch=1.2 rate=0.9`.
+ *
+ * Inside LiaScript the line goes to `window.LIA.playback`, so the stage uses the
+ * same voice choice as the course (gender detection of many engines, ResponsiveVoice).
+ * Outside of LiaScript the Web Speech API is used directly.
  */
 
 /** the voice names LiaScript uses for `narrator:` (ResponsiveVoice) → language */
@@ -39,14 +43,15 @@ const LANGS: Record<string, string> = {
 }
 
 /** names that hint at a female or male voice in the common TTS engines */
-const FEMALE = /female|frau|woman|anna|helena|katja|petra|marlene|vicki|hedda|zira|susan|samantha|karen|moira|tessa|serena|kate|victoria|amelie|aurelie|monica|paulina|alice|joana|luciana|milena|sara|ellen|nora|zosia|yuna|ting|mei|kyoko|hazel|heera|elsa|ioana|catherine|google uk english female|libby|sonia|jenny|aria|seraphina|amala|conchita/i
-const MALE = /male|mann|man\b|stefan|markus|yannick|hans|conrad|killian|david|mark|george|james|alex|daniel|fred|thomas|jorge|diego|luca|xander|maged|ryan|guy|rishi|oliver|florian|christoph|jonas|ralf|kasper/i
+const FEMALE = /female|frau|woman|anna|helena|katja|petra|marlene|vicki|hedda|zira|susan|samantha|karen|moira|tessa|serena|kate|victoria|amelie|aurelie|monica|paulina|alice|joana|luciana|milena|sara|ellen|nora|zosia|yuna|ting|mei|kyoko|hazel|heera|elsa|ioana|catherine|google uk english female|libby|sonia|jenny|aria|seraphina|amala|conchita|hoda|hortense|julie|siwis|\bcori\b|lessac|\bamy\b|kerstin|eva_k|ramona|\bdii\b/i
+const MALE = /male|mann|man\b|stefan|markus|yannick|hans|conrad|killian|david|mark|george|james|alex|daniel|fred|thomas|jorge|diego|luca|xander|maged|ryan|guy|rishi|oliver|florian|christoph|jonas|ralf|kasper|naayf|kareem|\balan\b|gilles|thorsten|karlsson|\bpaul\b/i
 
-export type VoiceSpec = { lang?: string; gender?: 'female' | 'male'; name?: string; pitch: number; rate: number }
+export type VoiceSpec = { lang?: string; gender?: 'female' | 'male'; name?: string; spec?: string; pitch: number; rate: number }
 
 export function parseVoice(spec: string | undefined, kv: Record<string, string> = {}, fallbackLang?: string): VoiceSpec {
   const v: VoiceSpec = { pitch: parseFloat(kv.pitch ?? '1') || 1, rate: parseFloat(kv.rate ?? '1') || 1 }
   let s = (spec || '').trim()
+  if (s) v.spec = s
   const g = /\b(female|male|woman|man|frau|mann)\b/i.exec(s)
   if (g) {
     v.gender = /^(female|woman|frau)$/i.test(g[1]) ? 'female' : 'male'
@@ -98,7 +103,23 @@ export async function pickVoice(v: VoiceSpec): Promise<SpeechSynthesisVoice | nu
 }
 
 export function available() {
-  return typeof window !== 'undefined' && 'speechSynthesis' in window
+  return typeof window !== 'undefined' && ('speechSynthesis' in window || !!liaPlayback())
+}
+
+/** `window.LIA.playback` of LiaScript, null outside of a course */
+function liaPlayback(): ((event: any) => void) | null {
+  const lia = typeof window !== 'undefined' ? (window as any).LIA : undefined
+  return lia && typeof lia.playback === 'function' && lia.settings ? lia.playback : null
+}
+
+/** LiaScript reads text, pitch and rate from an element; pitch and rate of the learner are kept */
+function liaText(text: string, v: VoiceSpec) {
+  const audio = (window as any).LIA.settings?.audio || {}
+  const el = document.createElement('span')
+  el.textContent = text
+  el.setAttribute('data-pitch', String(Math.max(0, Math.min(2, (audio.pitch ?? 1) * v.pitch))))
+  el.setAttribute('data-rate', String(Math.max(0.1, Math.min(4, (audio.rate ?? 1) * v.rate))))
+  return el
 }
 
 /** removes things that should not be read aloud (emoji, markdown marks) */
@@ -111,7 +132,7 @@ export function clean(text: string) {
 }
 
 export class Speech {
-  private current: SpeechSynthesisUtterance | null = null
+  private current: object | null = null
   private finish: (() => void) | null = null
 
   /**
@@ -122,6 +143,9 @@ export class Speech {
     this.cancel()
     const t = clean(text)
     if (!available() || !t) return
+    const playback = liaPlayback()
+    const viaLia = playback && this.speakWithLia(playback, t, v)
+    if (viaLia) return viaLia
     const voice = await pickVoice(v)
     const u = new SpeechSynthesisUtterance(t)
     if (voice) {
@@ -156,6 +180,51 @@ export class Speech {
     })
   }
 
+  /**
+   * LiaScript picks the voice (browser or ResponsiveVoice) and reports start, end and
+   * errors through the handlers. A line that never starts is given up after 5 seconds.
+   * Returns null if LiaScript cannot speak yet (e.g. its voices are still loading),
+   * then the stage reads the line itself.
+   */
+  private speakWithLia(playback: (event: any) => void, text: string, v: VoiceSpec): Promise<void> | null {
+    const token = {}
+    let resolve: () => void = () => {}
+    const spoken = new Promise<void>((r) => (resolve = r))
+    let started = false
+    const done = () => {
+      if (this.current === token) this.current = null
+      if (this.finish === done) this.finish = null
+      clearTimeout(giveUp)
+      resolve()
+    }
+    const giveUp = setTimeout(() => {
+      if (!started) done()
+    }, 5000)
+    this.current = token
+    this.finish = done
+    const voice = v.spec || [v.lang, v.gender].filter(Boolean).join(' ')
+    try {
+      playback({
+        reply: false,
+        track: [['tts', -1]],
+        service: 'tts',
+        handlers: {
+          onStart: () => void (started = true),
+          onStop: done,
+          onError: done,
+        },
+        message: { cmd: 'playback', param: { voice, lang: v.lang || 'en', text: liaText(text, v) } },
+      })
+    } catch (e) {
+      console.warn('pixi tts: LIA.playback failed, reading with the browser', e)
+      clearTimeout(giveUp)
+      this.current = null
+      this.finish = null
+      return null
+    }
+    return spoken
+  }
+
   get speaking() {
     return this.current !== null
   }
@@ -164,7 +233,8 @@ export class Speech {
     if (!available()) return
     if (this.current) {
       this.current = null
-      window.speechSynthesis.cancel()
+      window.speechSynthesis?.cancel()
+      ;(window as any).responsiveVoice?.cancel?.()
     }
     this.finish?.()
   }

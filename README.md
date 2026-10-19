@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 email:    LiaScript@web.de
-version:  0.5.0
+version:  0.5.1
 language: en
 narrator: US English Female
 comment:  Interactive, branching picture stories for LiaScript, rendered with
@@ -302,7 +302,7 @@ your course with the `import:` statement in the header:
 
 or use a fixed version, so that later changes cannot break your course:
 
-`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.5.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/pixijs/0.5.1/README.md`
 
 You can also copy the macros from the [Implementation](#implementation) section
 into your own header, or load only the bundle with
@@ -793,7 +793,11 @@ opa: Und ich spreche Deutsch.
 `voice=` accepts a language (`de-DE`, `en-GB`), the voice names of the
 LiaScript narrator (`Deutsch Female`, `UK English Male`) or a part of the name
 of an installed voice (`Google Deutsch`). Use `pitch=` and `rate=` (0.5 – 2)
-to fine-tune. The 🗣 button switches reading aloud off and on; by default it
+to fine-tune. Inside a course the stage reads through LiaScript
+(`window.LIA.playback`), so it picks voices like the narrator of the course: by
+language and gender, also for voices without a gender in their name. The pitch
+and rate of a character are combined with the audio settings of the learner.
+The 🗣 button switches reading aloud off and on; by default it
 follows the sound setting of LiaScript. The mouths of the characters move
 while they speak.
 
